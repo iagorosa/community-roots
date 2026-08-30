@@ -136,7 +136,8 @@ def _resolve_region_id(db: Session, identifier: str) -> uuid.UUID:
     return region_id
 
 
-def _slugify(name: str) -> str:
+def slugify(name: str) -> str:
+    """Derive a URL-safe slug from `name`. Public: also used by `scripts/seed.py`."""
     ascii_only = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode("ascii")
     slug = re.sub(r"[^a-z0-9]+", "-", ascii_only.lower()).strip("-")
     return slug or "canteiro"
@@ -150,7 +151,7 @@ def _generate_unique_slug(db: Session, name: str, *, exclude_id: uuid.UUID | Non
     surfacing as an unhandled `IntegrityError` (500). Accepted for the MVP's
     low-concurrency admin usage rather than adding a retry loop.
     """
-    base_slug = _slugify(name)
+    base_slug = slugify(name)
 
     query = select(Region.slug).where(Region.slug.like(f"{base_slug}%"))
     if exclude_id is not None:

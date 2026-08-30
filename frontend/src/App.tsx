@@ -1,9 +1,12 @@
-import HomePage from './pages/HomePage'
+import { BrowserRouter } from 'react-router'
+import AppRoutes from './AppRoutes.tsx'
 
-// Phase 1 shell: no Router yet (that's Phase 3), so App renders the
-// provisional HomePage directly.
 function App() {
-  return <HomePage />
+  return (
+    <BrowserRouter>
+      <AppRoutes />
+    </BrowserRouter>
+  )
 }
 
 export default App

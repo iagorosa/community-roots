@@ -35,7 +35,7 @@ function HomePage() {
   }, [])
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-50">
+    <div className="flex flex-1 items-center justify-center bg-slate-50">
       <div className="rounded-lg bg-white p-8 text-center shadow-md">
         <h1 className="text-3xl font-bold text-emerald-600">Community Roots</h1>
         <p className="mt-2 text-slate-600">Esqueleto do frontend em construção.</p>
@@ -55,7 +55,7 @@ function HomePage() {
           )}
         </div>
       </div>
-    </main>
+    </div>
   )
 }
 

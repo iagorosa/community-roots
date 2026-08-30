@@ -1,0 +1,143 @@
+"""A region's photo timeline: listing with keyset pagination. See
+docs/architecture.md §4.3/§4.4 for the `photos` table and the
+location-derivation decision, and §5 for the `GET /api/regions/{region}/photos`
+contract.
+"""
+
+import base64
+import binascii
+import uuid
+from datetime import datetime
+
+from sqlalchemy import ColumnElement, func, select, tuple_
+from sqlalchemy.orm import Session
+
+from app.core.errors import ValidationFailedError
+from app.models.photo import Photo
+from app.schemas.photo import PhotoOut, PhotoPage
+from app.services import region_service
+
+# architecture.md §4.5: `status` exists so an organizer can pull a photo
+# offline with a single `UPDATE` — this is the only listing of photos this
+# issue builds, and it's public (no admin token), so `hidden` must never
+# leak through it, unconditionally.
+_PUBLICLY_VISIBLE: ColumnElement[bool] = Photo.status == "published"
+
+DEFAULT_PAGE_SIZE = 20
+MAX_PAGE_SIZE = 100
+
+_CURSOR_SEPARATOR = "|"
+
+
+class InvalidCursor(ValidationFailedError):
+    code = "invalid_cursor"
+
+    def __init__(self, cursor: str) -> None:
+        super().__init__(f'Cursor de paginação inválido: "{cursor}".')
+
+
+def _encode_cursor(uploaded_at: datetime, photo_id: uuid.UUID) -> str:
+    """Pack the keyset position into one opaque token.
+
+    Callers only ever round-trip this value (read it from one response, send
+    it back as the next request's `cursor`) — base64 keeps it from looking
+    like something meant to be read or hand-constructed, matching how
+    `regions.qr_token` is treated elsewhere in this codebase.
+    """
+    raw = f"{uploaded_at.isoformat()}{_CURSOR_SEPARATOR}{photo_id}"
+    return base64.urlsafe_b64encode(raw.encode()).decode()
+
+
+def _decode_cursor(cursor: str) -> tuple[datetime, uuid.UUID]:
+    try:
+        raw = base64.urlsafe_b64decode(cursor.encode()).decode()
+        uploaded_at_raw, id_raw = raw.split(_CURSOR_SEPARATOR)
+        return datetime.fromisoformat(uploaded_at_raw), uuid.UUID(id_raw)
+    except (ValueError, binascii.Error, UnicodeDecodeError) as exc:
+        # `cursor` is client-supplied input round-tripped from a value this
+        # service generated, so any parse failure here means a tampered or
+        # stale value — a 422, never a 500.
+        raise InvalidCursor(cursor) from exc
+
+
+def list_region_photos(
+    db: Session,
+    identifier: str,
+    *,
+    cursor: str | None = None,
+    limit: int = DEFAULT_PAGE_SIZE,
+) -> PhotoPage:
+    """List `published` photos of the region `identifier` resolves to,
+    most-recently-uploaded first.
+
+    Raises `region_service.RegionNotFound` (a `NotFoundError`) if
+    `identifier` doesn't resolve — `region_service.get_region` is reused
+    rather than re-implementing the UUID-or-slug resolution, so there is
+    still exactly one place that logic lives (architecture.md §5).
+
+    **Why keyset, not page/offset, pagination.** The listing orders by
+    `uploaded_at DESC` on a table that receives inserts constantly — new
+    photos always land on top. With page-number/offset pagination, a photo
+    inserted between two requests shifts every row below it by one
+    position: the client's next `offset` now points one row too early, so
+    it either re-sees an item from the previous page or, symmetrically,
+    skips one it hasn't seen yet. Keyset pagination sidesteps this because
+    it never expresses "page N" as a position count — it expresses "give me
+    the rows strictly after the last one I saw" as a `WHERE` predicate on
+    `(uploaded_at, id)`. That comparison is anchored to a specific row, not
+    a row count, so a fresh insert anywhere in the table — even one that
+    lands ahead of everything already returned — cannot move a boundary the
+    client has already crossed. `id` breaks ties because `uploaded_at`
+    alone isn't unique (same-second uploads), and the composite matches the
+    `ix_photos_region_id_uploaded_at` index's leading columns, so the
+    predicate is served by that index rather than a sequential scan.
+    """
+    region = region_service.get_region(db, identifier)
+    region_id = uuid.UUID(region.id)
+
+    page_size = min(max(limit, 1), MAX_PAGE_SIZE)
+
+    query = (
+        select(
+            Photo.id,
+            Photo.description,
+            Photo.contributor_name,
+            Photo.captured_at,
+            Photo.uploaded_at,
+            func.ST_Y(Photo.location).label("latitude"),
+            func.ST_X(Photo.location).label("longitude"),
+        )
+        .where(Photo.region_id == region_id, _PUBLICLY_VISIBLE)
+        .order_by(Photo.uploaded_at.desc(), Photo.id.desc())
+        # One extra row past `page_size` is the cheapest way to know
+        # whether another page exists, without a second COUNT query.
+        .limit(page_size + 1)
+    )
+
+    if cursor is not None:
+        cursor_uploaded_at, cursor_id = _decode_cursor(cursor)
+        query = query.where(
+            tuple_(Photo.uploaded_at, Photo.id) < tuple_(cursor_uploaded_at, cursor_id)
+        )
+
+    rows = db.execute(query).all()
+
+    has_more = len(rows) > page_size
+    page_rows = rows[:page_size]
+    next_cursor = _encode_cursor(page_rows[-1].uploaded_at, page_rows[-1].id) if has_more else None
+
+    return PhotoPage(
+        items=[
+            PhotoOut(
+                id=row.id,
+                description=row.description,
+                contributor_name=row.contributor_name,
+                captured_at=row.captured_at,
+                uploaded_at=row.uploaded_at,
+                latitude=row.latitude,
+                longitude=row.longitude,
+            )
+            for row in page_rows
+        ],
+        next_cursor=next_cursor,
+    )

@@ -104,6 +104,25 @@ def test_list_photos_exposes_latitude_longitude_and_photo_url_not_storage_key(
     assert "location" not in item
 
 
+def test_list_photos_exposes_width_and_height(client: TestClient, db_session: Session) -> None:
+    """The frontend timeline (issue #24) needs `width`/`height` in the wire
+    response to reserve layout space for each image before it loads.
+    """
+    region = _make_region()
+    db_session.add(region)
+    db_session.flush()
+
+    photo = _make_photo(region.id, width=800, height=600)
+    db_session.add(photo)
+    db_session.commit()
+
+    response = client.get("/api/regions/canteiro-a/photos")
+
+    [item] = response.json()["items"]
+    assert item["width"] == 800
+    assert item["height"] == 600
+
+
 def test_list_photos_returns_404_for_unknown_region(client: TestClient) -> None:
     response = client.get("/api/regions/nao-existe/photos")
 

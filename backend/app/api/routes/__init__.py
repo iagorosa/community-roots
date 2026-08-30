@@ -8,6 +8,8 @@ router as they are implemented in later issues; `app.main` only ever imports
 from fastapi import APIRouter
 
 from app.api.routes.health import router as health_router
+from app.api.routes.regions import router as regions_router
 
 api_router = APIRouter()
 api_router.include_router(health_router)
+api_router.include_router(regions_router)

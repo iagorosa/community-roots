@@ -48,11 +48,11 @@ Placa no canteiro -> QR Code -> canteiro digital -> linha do tempo de fotos
 
 | Camada | Escolha | Por quê |
 |---|---|---|
-| Framework de frontend | React 19 + Vite 7 | Segue a direção do protótipo anterior; o Vite dá HMR rápido e build estático trivial. |
-| Linguagem do frontend | TypeScript | O desenvolvedor é mais forte em backend; tipos em `Region` e `Photo` espelham os schemas Pydantic e pegam erro de formato de dado em tempo de edição. |
+| Framework de frontend | React 19 + Vite 8 | Segue a direção do protótipo anterior; o Vite dá HMR rápido e build estático trivial. |
+| Linguagem do frontend | TypeScript 6 | O desenvolvedor é mais forte em backend; tipos em `Region` e `Photo` espelham os schemas Pydantic e pegam erro de formato de dado em tempo de edição. |
 | Estilo | Tailwind CSS v4 via `@tailwindcss/vite` | Ver [§2.1](#21-decisão-do-tailwind-v4). |
 | Mapa | `react-leaflet` v5 + `leaflet` 1.9 | Ver [§2.2](#22-decisão-do-mapa). |
-| Rotas | `react-router` v7 (modo declarativo) | Padrão do ecossistema, pequeno, sem amarrar a um framework. |
+| Rotas | `react-router` v8 (modo declarativo) | Padrão do ecossistema, pequeno, sem amarrar a um framework. |
 | Estado de servidor | TanStack Query v5 | Estados de carregamento, erro e recarga são a maior parte da lógica de tela deste app. Reescrever isso em cada página é a complexidade maior. |
 | Backend | FastAPI + Pydantic v2 | Documentação OpenAPI automática, validação de request e suporte a multipart. |
 | ORM | SQLAlchemy 2.0 (tipado, com `Mapped[...]`) + GeoAlchemy2 | O GeoAlchemy2 mapeia colunas de geometria do PostGIS para tipos Python reais e expõe as funções `ST_*` através do SQLAlchemy. |
@@ -63,6 +63,15 @@ Placa no canteiro -> QR Code -> canteiro digital -> linha do tempo de fotos
 | Testes de backend | pytest + `TestClient` do FastAPI | A pilha é síncrona, então não é preciso harness de teste assíncrono. |
 | Testes de frontend | Vitest + Testing Library + MSW | Mesmo pipeline de transformação do Vite; o MSW simula a API na camada de rede. |
 | QR Codes | `qrcode` + `Pillow` | Python puro, sem serviço externo e sem API key. |
+
+> As versões major desta tabela foram atualizadas na issue #46 para
+> refletir o que `npm create vite@latest` e `npm install` realmente
+> instalaram na implementação da #6 (Vite 7→8, TypeScript passou a ser
+> especificado como 6, React Router v7→8; versões exatas em
+> `frontend/package.json`). O modo declarativo do React Router continua
+> existindo e sendo o modo recomendado pela documentação oficial da v8
+> para quem "quer usar o React Router da forma mais simples possível" —
+> a decisão registrada na linha "Rotas" segue válida sem mudanças.
 
 ### 2.1 Decisão do Tailwind v4
 

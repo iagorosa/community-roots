@@ -1,20 +1,20 @@
 import PlantingMap from '../components/map/PlantingMap.tsx'
+import RegionLayer from '../components/map/RegionLayer.tsx'
+import { useRegions } from '../hooks/useRegions.ts'
 
 /**
- * Minimal wiring for issue #16 (the `PlantingMap` component itself). Real
- * data — `RegionLayer`, `fitBounds`, loading/error/empty states — is
- * issue #18.
+ * Minimal wiring for issues #16/#17 (`PlantingMap`, `RegionLayer`). Real
+ * `fitBounds` and `LoadingState`/`ErrorState`/`EmptyState` are issue #18 —
+ * this crude `data && ...` check is only here so #17's map interactions
+ * are reachable for manual QA in a real browser.
  */
 function MapPage() {
+  const { data } = useRegions()
+
   return (
     <div className="flex flex-1 flex-col">
       <h1 className="sr-only">Mapa</h1>
-      {/* `flex-1`, not `h-full`: this wrapper is `flex-col`, and a
-          percentage height doesn't reliably resolve against a flex-grown
-          ancestor — that mismatch is the real "half-gray map" bug
-          architecture.md §2.2 warns about (reproduced and confirmed live
-          in a browser while building this). */}
-      <PlantingMap className="flex-1" />
+      <PlantingMap className="flex-1">{data && <RegionLayer data={data} />}</PlantingMap>
     </div>
   )
 }

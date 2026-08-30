@@ -1,1 +1,26 @@
 @import "tailwindcss";
+
+/* RegionLayer (components/map/RegionLayer.tsx): hover/focus style for
+   canteiro shapes on the map. Plain CSS, not Tailwind utilities — these
+   are SVG paths from Leaflet, styled through the `className` Leaflet
+   applies from the GeoJSON `style()` callback, not JSX. */
+.region-layer-shape {
+  cursor: pointer;
+  outline: none;
+  transition:
+    fill-opacity 150ms ease,
+    stroke-width 150ms ease;
+}
+
+.region-layer-shape:hover,
+.region-layer-shape:focus-visible {
+  fill-opacity: 0.55;
+}
+
+/* Focus also thickens the stroke, not just fill-opacity: fill-opacity
+   alone has no guaranteed contrast against every map tile underneath
+   (WCAG 1.4.11), and a keyboard user needs a cue that doesn't depend on
+   what's behind the shape. */
+.region-layer-shape:focus-visible {
+  stroke-width: 4;
+}

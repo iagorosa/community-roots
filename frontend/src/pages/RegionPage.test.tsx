@@ -152,14 +152,14 @@ describe('RegionPage', () => {
     expect(props.center[1]).toBeCloseTo(-43.3129)
   })
 
-  it('shows a disabled photo-upload button with a plain-language explanation', async () => {
+  it('renders the photo upload form, with submit disabled until a file is chosen', async () => {
     stubFetch({ region: { body: SAMPLE_FEATURE } })
 
     renderRegionPage()
 
     const button = await screen.findByRole('button', { name: /enviar foto/i })
     expect(button).toBeDisabled()
-    expect(screen.getByText(/em breve você vai poder enviar fotos/i)).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: /compartilhar/i })).not.toBeChecked()
   })
 
   it('renders NotFoundPage, not a generic error, when the region does not exist', async () => {

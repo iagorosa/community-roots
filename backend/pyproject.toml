@@ -27,6 +27,13 @@ dev = [
 # Application, not a library to be imported elsewhere — no wheel to build.
 package = false
 
+[tool.setuptools.packages.find]
+# setuptools' auto-discovery (used by `pip install -e`, unlike uv) sees both
+# app/ and alembic/ as top-level packages and refuses to guess which one is
+# the application. Restrict discovery to app*, since alembic/ is migration
+# tooling, not an importable package of the app.
+include = ["app*"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"

@@ -1,8 +1,11 @@
 """Tests for `app/services/photo_service.py`: the region photo timeline and
-its keyset pagination. See docs/architecture.md §4.3/§4.4 and issue #21.
+its keyset pagination (issue #21), plus resolving a photo's file for
+`GET /api/photos/{photo_id}/file` (issue #22).
 """
 
+import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 from geoalchemy2.elements import WKTElement
@@ -11,8 +14,9 @@ from sqlalchemy.orm import Session
 from app.models.photo import Photo
 from app.models.region import Region
 from app.services import photo_service
-from app.services.photo_service import InvalidCursor
+from app.services.photo_service import InvalidCursor, PhotoNotFound
 from app.services.region_service import RegionNotFound
+from app.storage.local import LocalFilesystemStorage
 
 _POLYGON_WKT = (
     "POLYGON((-43.3130 -21.8845, -43.3125 -21.8845, "
@@ -170,3 +174,74 @@ def test_list_region_photos_rejects_a_malformed_cursor(db_session: Session) -> N
 
     with pytest.raises(InvalidCursor):
         photo_service.list_region_photos(db_session, "canteiro-a", cursor="not-a-valid-cursor")
+
+
+def test_open_photo_file_returns_readable_bytes_and_the_stored_content_type(
+    db_session: Session, tmp_path: Path
+) -> None:
+    region = _make_region()
+    db_session.add(region)
+    db_session.flush()
+
+    (tmp_path / "photos").mkdir()
+    (tmp_path / "photos" / "a.png").write_bytes(b"fake-png-bytes")
+    photo = _make_photo(region.id, storage_key="photos/a.png", content_type="image/png")
+    db_session.add(photo)
+    db_session.commit()
+
+    storage = LocalFilesystemStorage(tmp_path)
+    file, content_type = photo_service.open_photo_file(db_session, photo.id, storage)
+
+    with file:
+        assert file.read() == b"fake-png-bytes"
+    assert content_type == "image/png"
+
+
+def test_open_photo_file_raises_photo_not_found_for_an_unknown_id(
+    db_session: Session, tmp_path: Path
+) -> None:
+    storage = LocalFilesystemStorage(tmp_path)
+
+    with pytest.raises(PhotoNotFound):
+        photo_service.open_photo_file(db_session, uuid.uuid4(), storage)
+
+
+def test_open_photo_file_raises_photo_not_found_for_a_hidden_photo(
+    db_session: Session, tmp_path: Path
+) -> None:
+    """`hidden` fully hides a photo's file too, not just the timeline listing
+    — see the docstring of `photo_service.open_photo_file` for why.
+    """
+    region = _make_region()
+    db_session.add(region)
+    db_session.flush()
+
+    (tmp_path / "photos").mkdir()
+    (tmp_path / "photos" / "a.png").write_bytes(b"fake-png-bytes")
+    photo = _make_photo(region.id, storage_key="photos/a.png", status="hidden")
+    db_session.add(photo)
+    db_session.commit()
+
+    storage = LocalFilesystemStorage(tmp_path)
+    with pytest.raises(PhotoNotFound):
+        photo_service.open_photo_file(db_session, photo.id, storage)
+
+
+def test_open_photo_file_raises_photo_not_found_when_the_file_is_missing_from_storage(
+    db_session: Session, tmp_path: Path
+) -> None:
+    """A `Photo` row can outlive its file (storage wiped out-of-band, e.g. by
+    hand during an incident) — this must surface as the same clean 404 as an
+    unknown id, never as a 500 leaking a filesystem `FileNotFoundError`.
+    """
+    region = _make_region()
+    db_session.add(region)
+    db_session.flush()
+
+    photo = _make_photo(region.id, storage_key="photos/never-written.png")
+    db_session.add(photo)
+    db_session.commit()
+
+    storage = LocalFilesystemStorage(tmp_path)
+    with pytest.raises(PhotoNotFound):
+        photo_service.open_photo_file(db_session, photo.id, storage)

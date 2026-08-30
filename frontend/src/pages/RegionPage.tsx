@@ -1,7 +1,10 @@
 import { useParams } from 'react-router'
+import EmptyState from '../components/feedback/EmptyState.tsx'
 import ErrorState from '../components/feedback/ErrorState.tsx'
 import LoadingState from '../components/feedback/LoadingState.tsx'
 import PlantingMap from '../components/map/PlantingMap.tsx'
+import PhotoTimeline from '../components/photos/PhotoTimeline.tsx'
+import { usePhotos } from '../hooks/usePhotos.ts'
 import { useRegion } from '../hooks/useRegion.ts'
 import { ApiError } from '../services/apiClient.ts'
 import { regionCenter } from '../utils/geo.ts'
@@ -25,6 +28,31 @@ function PhotoUploadSection() {
       <p className="mt-2 text-sm text-slate-500">Em breve você vai poder enviar fotos daqui.</p>
     </div>
   )
+}
+
+// The photo timeline (issue #24) fails or loads independently of the rest
+// of the page: a slow/broken photos endpoint shouldn't take down a canteiro
+// page whose name, description, and map already loaded fine. So this gets
+// its own scoped loading/error/empty states, separate from `RegionPage`'s
+// (which only ever concern the region itself).
+function PhotoTimelineSection({ identifier }: { identifier: string }) {
+  const { data, isPending, isError } = usePhotos(identifier)
+
+  if (isPending) {
+    return <LoadingState message="Carregando fotos..." />
+  }
+
+  if (isError) {
+    return <ErrorState message="Não foi possível carregar as fotos. Tente novamente mais tarde." />
+  }
+
+  if (data.items.length === 0) {
+    return (
+      <EmptyState message="Esse canteiro ainda não tem foto, mas em breve você vai poder enviar uma." />
+    )
+  }
+
+  return <PhotoTimeline photos={data.items} />
 }
 
 function RegionPage() {
@@ -73,6 +101,11 @@ function RegionPage() {
       </div>
 
       <PhotoUploadSection />
+
+      <div className="mt-4 flex flex-col gap-3">
+        <h2 className="text-xl font-bold text-emerald-700">Fotos</h2>
+        <PhotoTimelineSection identifier={slug ?? ''} />
+      </div>
     </div>
   )
 }

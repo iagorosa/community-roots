@@ -3,7 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { RegionFeature } from '../types/api'
+import type { Photo, PhotoPage, RegionFeature } from '../types/api'
 import RegionPage from './RegionPage'
 
 // Same shallow react-leaflet fake `MapPage.test.tsx` uses (docs/architecture.md
@@ -36,8 +36,44 @@ const SAMPLE_FEATURE: RegionFeature = {
   },
 }
 
+const SAMPLE_PHOTO: Photo = {
+  id: '1a2b3c4d-5e6f-7890-abcd-ef1234567890',
+  description: 'Primeira muda plantada.',
+  contributor_name: 'Ana',
+  captured_at: '2026-08-24T14:00:00Z',
+  uploaded_at: '2026-08-24T14:05:00Z',
+  latitude: -21.8843,
+  longitude: -43.3129,
+  width: 1080,
+  height: 1350,
+  photo_url: '/api/photos/1a2b3c4d-5e6f-7890-abcd-ef1234567890/file',
+}
+
+const EMPTY_PHOTO_PAGE: PhotoPage = { items: [], next_cursor: null }
+
 function jsonResponse(body: unknown, status = 200): Response {
   return { ok: status < 400, status, json: () => Promise.resolve(body) } as Response
+}
+
+// `RegionPage` fetches both the region (`GET /api/regions/{slug}`) and its
+// photos (`GET /api/regions/{slug}/photos`) — this routes a single `fetch`
+// mock to the right canned response for each, by URL, instead of every
+// test needing to know both endpoints exist. Defaults the photos response
+// to an empty page so tests that only care about the region don't have to
+// think about photos at all.
+function stubFetch(options: {
+  region: { body: unknown; status?: number }
+  photos?: { body: unknown; status?: number }
+}) {
+  const fetchMock = vi.fn((url: string) => {
+    if (url.includes('/photos')) {
+      const photos = options.photos ?? { body: EMPTY_PHOTO_PAGE }
+      return Promise.resolve(jsonResponse(photos.body, photos.status))
+    }
+    return Promise.resolve(jsonResponse(options.region.body, options.region.status))
+  })
+  vi.stubGlobal('fetch', fetchMock)
+  return fetchMock
 }
 
 function renderRegionPage(slug = 'canteiro-do-ipe') {
@@ -70,7 +106,7 @@ describe('RegionPage', () => {
   })
 
   it('shows the name, description, and photo count on success', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(SAMPLE_FEATURE)))
+    stubFetch({ region: { body: SAMPLE_FEATURE } })
 
     renderRegionPage()
 
@@ -84,7 +120,7 @@ describe('RegionPage', () => {
       ...SAMPLE_FEATURE,
       properties: { ...SAMPLE_FEATURE.properties, description: null },
     }
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(featureWithoutDescription)))
+    stubFetch({ region: { body: featureWithoutDescription } })
 
     renderRegionPage()
 
@@ -97,7 +133,7 @@ describe('RegionPage', () => {
       ...SAMPLE_FEATURE,
       properties: { ...SAMPLE_FEATURE.properties, photo_count: 1 },
     }
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(featureWithOnePhoto)))
+    stubFetch({ region: { body: featureWithOnePhoto } })
 
     renderRegionPage()
 
@@ -106,7 +142,7 @@ describe('RegionPage', () => {
   })
 
   it('renders the mini-map centered on the canteiro', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(SAMPLE_FEATURE)))
+    stubFetch({ region: { body: SAMPLE_FEATURE } })
 
     renderRegionPage()
 
@@ -117,7 +153,7 @@ describe('RegionPage', () => {
   })
 
   it('shows a disabled photo-upload button with a plain-language explanation', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(SAMPLE_FEATURE)))
+    stubFetch({ region: { body: SAMPLE_FEATURE } })
 
     renderRegionPage()
 
@@ -127,12 +163,12 @@ describe('RegionPage', () => {
   })
 
   it('renders NotFoundPage, not a generic error, when the region does not exist', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue(
-        jsonResponse({ detail: 'Nenhum canteiro encontrado para "inexistente".', code: 'region_not_found' }, 404),
-      ),
-    )
+    stubFetch({
+      region: {
+        body: { detail: 'Nenhum canteiro encontrado para "inexistente".', code: 'region_not_found' },
+        status: 404,
+      },
+    })
 
     renderRegionPage('inexistente')
 
@@ -147,5 +183,42 @@ describe('RegionPage', () => {
 
     await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument())
     expect(screen.queryByRole('heading', { name: /página não encontrada/i })).not.toBeInTheDocument()
+  })
+
+  describe('photo timeline', () => {
+    it('shows an empty state explaining how to contribute when the canteiro has no photos', async () => {
+      stubFetch({ region: { body: SAMPLE_FEATURE }, photos: { body: EMPTY_PHOTO_PAGE } })
+
+      renderRegionPage()
+
+      await waitFor(() => expect(screen.getByRole('heading', { name: 'Canteiro do Ipê' })).toBeInTheDocument())
+      expect(await screen.findByText(/ainda não tem foto/i)).toBeInTheDocument()
+    })
+
+    it('renders a PhotoCard for each photo once photos load', async () => {
+      const photoPage: PhotoPage = { items: [SAMPLE_PHOTO], next_cursor: null }
+      stubFetch({ region: { body: SAMPLE_FEATURE }, photos: { body: photoPage } })
+
+      renderRegionPage()
+
+      const image = await screen.findByRole('img')
+      expect(image).toHaveAttribute('src', SAMPLE_PHOTO.photo_url)
+      expect(image).toHaveAttribute('width', '1080')
+      expect(image).toHaveAttribute('height', '1350')
+      expect(screen.getByText('Ana')).toBeInTheDocument()
+      expect(screen.getByText('Primeira muda plantada.')).toBeInTheDocument()
+    })
+
+    it('shows a scoped error state for the photo section when photos fail to load, without hiding the rest of the page', async () => {
+      stubFetch({
+        region: { body: SAMPLE_FEATURE },
+        photos: { body: { detail: 'erro' }, status: 500 },
+      })
+
+      renderRegionPage()
+
+      await waitFor(() => expect(screen.getByRole('heading', { name: 'Canteiro do Ipê' })).toBeInTheDocument())
+      expect(await screen.findByText(/não foi possível carregar as fotos/i)).toBeInTheDocument()
+    })
   })
 })

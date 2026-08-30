@@ -116,6 +116,8 @@ def list_region_photos(
             Photo.contributor_name,
             Photo.captured_at,
             Photo.uploaded_at,
+            Photo.width,
+            Photo.height,
             func.ST_Y(Photo.location).label("latitude"),
             func.ST_X(Photo.location).label("longitude"),
         )
@@ -148,6 +150,8 @@ def list_region_photos(
                 uploaded_at=row.uploaded_at,
                 latitude=row.latitude,
                 longitude=row.longitude,
+                width=row.width,
+                height=row.height,
             )
             for row in page_rows
         ],

@@ -52,3 +52,29 @@ export interface FeatureCollection<Geometry, Properties> {
 
 export type RegionFeature = Feature<RegionGeometry, RegionProperties>
 export type RegionFeatureCollection = FeatureCollection<RegionGeometry, RegionProperties>
+
+// Mirrors backend/app/schemas/photo.py::PhotoOut. `width`/`height` are the
+// dimensions recorded on upload (issue #20) — the frontend timeline
+// (issue #24) sets them as the `<img>` element's native `width`/`height`
+// attributes so the browser reserves the image's layout space before it
+// loads, instead of reflowing the page once it does.
+export interface Photo {
+  id: string
+  description: string | null
+  contributor_name: string | null
+  captured_at: string | null
+  uploaded_at: string
+  latitude: number | null
+  longitude: number | null
+  width: number
+  height: number
+  photo_url: string
+}
+
+// Mirrors backend/app/schemas/photo.py::PhotoPage — the response of
+// `GET /api/regions/{region}/photos` (keyset-paginated, see
+// backend/app/services/photo_service.py for why).
+export interface PhotoPage {
+  items: Photo[]
+  next_cursor: string | null
+}

@@ -25,6 +25,12 @@ class PhotoOut(BaseModel):
     uploaded_at: datetime
     latitude: float | None
     longitude: float | None
+    # Recorded on upload (issue #20), never re-derived here — this is what
+    # lets the frontend timeline (issue #24) set the `<img>` `width`/`height`
+    # attributes up front, so the browser reserves the image's layout space
+    # before it loads instead of reflowing the page once it does.
+    width: int
+    height: int
 
     @computed_field  # type: ignore[prop-decorator]
     @property

@@ -94,6 +94,27 @@ def test_list_region_photos_derives_latitude_and_longitude_from_location(
     assert by_id[without_location.id].longitude is None
 
 
+def test_list_region_photos_exposes_width_and_height(db_session: Session) -> None:
+    """The frontend timeline (issue #24) reserves layout space for each
+    image via its `width`/`height` HTML attributes before it loads — it can
+    only do that if `PhotoOut` carries the columns already recorded on
+    upload (issue #20), rather than only the derived `latitude`/`longitude`.
+    """
+    region = _make_region()
+    db_session.add(region)
+    db_session.flush()
+
+    photo = _make_photo(region.id, width=800, height=600)
+    db_session.add(photo)
+    db_session.commit()
+
+    page = photo_service.list_region_photos(db_session, "canteiro-a")
+
+    [item] = page.items
+    assert item.width == 800
+    assert item.height == 600
+
+
 def test_list_region_photos_excludes_hidden_photos(db_session: Session) -> None:
     region = _make_region()
     db_session.add(region)

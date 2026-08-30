@@ -31,9 +31,8 @@ class PhotoOut(BaseModel):
     def photo_url(self) -> str:
         """Where the actual image bytes live (architecture.md §5.2).
 
-        `GET /api/photos/{photo_id}/file` is issue #22, not built yet —
-        this only points at the URL by convention so the frontend has a
-        stable field to render from once that route exists.
+        Served by `GET /api/photos/{photo_id}/file` (issue #22,
+        `app/api/routes/photos.py`).
         """
         return f"/api/photos/{self.id}/file"
 

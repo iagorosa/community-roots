@@ -8,14 +8,16 @@ import base64
 import binascii
 import uuid
 from datetime import datetime
+from typing import BinaryIO
 
 from sqlalchemy import ColumnElement, func, select, tuple_
 from sqlalchemy.orm import Session
 
-from app.core.errors import ValidationFailedError
+from app.core.errors import NotFoundError, ValidationFailedError
 from app.models.photo import Photo
 from app.schemas.photo import PhotoOut, PhotoPage
 from app.services import region_service
+from app.storage.base import StorageBackend
 
 # architecture.md §4.5: `status` exists so an organizer can pull a photo
 # offline with a single `UPDATE` — this is the only listing of photos this
@@ -34,6 +36,16 @@ class InvalidCursor(ValidationFailedError):
 
     def __init__(self, cursor: str) -> None:
         super().__init__(f'Cursor de paginação inválido: "{cursor}".')
+
+
+class PhotoNotFound(NotFoundError):
+    code = "photo_not_found"
+
+    def __init__(self, photo_id: uuid.UUID) -> None:
+        # Only ever built from `photo_id` — never `storage_key` — so this
+        # message can't leak a storage path even by accident (architecture.md
+        # §5.2 / §5.3).
+        super().__init__(f'Nenhuma foto encontrada com o id "{photo_id}".')
 
 
 def _encode_cursor(uploaded_at: datetime, photo_id: uuid.UUID) -> str:
@@ -141,3 +153,45 @@ def list_region_photos(
         ],
         next_cursor=next_cursor,
     )
+
+
+def open_photo_file(
+    db: Session, photo_id: uuid.UUID, storage: StorageBackend
+) -> tuple[BinaryIO, str]:
+    """Resolve `photo_id` to an open file handle and its content type, for
+    `GET /api/photos/{photo_id}/file` (architecture.md §5.2).
+
+    Reuses `_PUBLICLY_VISIBLE` — the same rule `list_region_photos` applies —
+    rather than only checking existence: `region_service.get_region` already
+    sets the precedent that `hidden`/`archived` fully removes a row from every
+    public read path, not just listings (its `_PUBLICLY_VISIBLE` filters
+    `get_region` too, not only `list_regions`). A `hidden` photo follows the
+    same rule here: architecture.md's rationale for `status` is letting an
+    organizer "pull a photo offline with a single UPDATE", which reads as
+    taking it down entirely, not just delisting it while a direct link still
+    works — the more conservative reading, given this product's photos are
+    of children.
+
+    Raises `PhotoNotFound` for an unknown/hidden id *and* when the row exists
+    but its file is missing from storage (e.g. `backend/storage/` wiped
+    out-of-band) — from the caller's perspective these are indistinguishable,
+    and collapsing them into one 404 is what keeps `storage_key` from ever
+    reaching an error message.
+    """
+    photo = db.execute(
+        select(Photo).where(Photo.id == photo_id, _PUBLICLY_VISIBLE)
+    ).scalar_one_or_none()
+    if photo is None:
+        raise PhotoNotFound(photo_id)
+
+    try:
+        file = storage.open(photo.storage_key)
+    except OSError:
+        # Broader than just `FileNotFoundError`: a corrupted `storage_key`
+        # pointing at a directory (`IsADirectoryError`) or a filesystem
+        # permission misconfiguration (`PermissionError`) must surface the
+        # same clean 404 as a missing file, never a raw 500 — all three are
+        # `OSError` subclasses.
+        raise PhotoNotFound(photo_id) from None
+
+    return file, photo.content_type

@@ -4,8 +4,10 @@
 // but a single import site keeps that guarantee obvious).
 import 'leaflet/dist/leaflet.css'
 
+import type { LatLngBoundsExpression } from 'leaflet'
 import type { ReactNode } from 'react'
-import { MapContainer, TileLayer } from 'react-leaflet'
+import { useEffect } from 'react'
+import { MapContainer, TileLayer, useMap } from 'react-leaflet'
 
 function requiredEnvVar(name: string, value: string | undefined): string {
   if (!value) {
@@ -43,13 +45,44 @@ interface PlantingMapProps {
    * detail page's mini-map (issue #23) overrides this to its own canteiro. */
   center?: [number, number]
   zoom?: number
+  /**
+   * When given, the map fits itself to these bounds (issue #18) instead of
+   * sitting at `center`/`zoom`. Applied imperatively via `useMap`, not
+   * `MapContainer`'s own `bounds` prop: that prop is skipped whenever
+   * `center`/`zoom` are also set (see react-leaflet's `MapContainer.js`),
+   * and this component always supplies a `center`/`zoom` default above.
+   */
+  bounds?: LatLngBoundsExpression
   children?: ReactNode
 }
 
-function PlantingMap({ className, center = DEFAULT_CENTER, zoom = DEFAULT_ZOOM, children }: PlantingMapProps) {
+/** Imperative `fitBounds` call, reacting to `bounds` changes — a plain
+ * `MapContainer` prop can't do this past the initial mount (see the
+ * `bounds` doc comment on `PlantingMapProps` above). Rendered only when
+ * `bounds` is given, so `PlantingMap` stays usable without ever pulling in
+ * `useMap` (the region detail page's mini-map, issue #23, has fixed
+ * center/zoom and no bounds to fit). */
+function FitBounds({ bounds }: { bounds: LatLngBoundsExpression }) {
+  const map = useMap()
+
+  useEffect(() => {
+    map.fitBounds(bounds)
+  }, [map, bounds])
+
+  return null
+}
+
+function PlantingMap({
+  className,
+  center = DEFAULT_CENTER,
+  zoom = DEFAULT_ZOOM,
+  bounds,
+  children,
+}: PlantingMapProps) {
   return (
     <MapContainer center={center} zoom={zoom} scrollWheelZoom className={className}>
       <TileLayer url={TILE_URL} attribution={TILE_ATTRIBUTION} />
+      {bounds && <FitBounds bounds={bounds} />}
       {children}
     </MapContainer>
   )

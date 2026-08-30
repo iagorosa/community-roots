@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import type { ReactNode } from 'react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import PlantingMap from './PlantingMap.tsx'
 
 // react-leaflet needs real layout/canvas APIs jsdom doesn't provide well, so
@@ -9,6 +9,12 @@ import PlantingMap from './PlantingMap.tsx'
 // "no Strict Mode double-init" checks in issue #16's critério de pronto are
 // validated manually in a real browser instead (docs/architecture.md §10:
 // map tests stay shallow).
+// `FitBounds` (PlantingMap.tsx) calls `useMap()` — real react-leaflet
+// requires a live `LeafletContext` this mocked `MapContainer` never
+// provides, so it's faked here too, matching the "shallow" map-test
+// approach (docs/architecture.md §10).
+const fakeMap = { fitBounds: vi.fn() }
+
 vi.mock('react-leaflet', () => ({
   MapContainer: ({ children, ...props }: Record<string, unknown> & { children?: ReactNode }) => (
     <div data-testid="map-container" data-props={JSON.stringify(props)}>
@@ -18,9 +24,14 @@ vi.mock('react-leaflet', () => ({
   TileLayer: (props: Record<string, unknown>) => (
     <div data-testid="tile-layer" data-props={JSON.stringify(props)} />
   ),
+  useMap: () => fakeMap,
 }))
 
 describe('PlantingMap', () => {
+  beforeEach(() => {
+    fakeMap.fitBounds.mockClear()
+  })
+
   it('configures the tile layer from VITE_MAP_* env vars', () => {
     render(<PlantingMap className="h-full" />)
 
@@ -63,5 +74,20 @@ describe('PlantingMap', () => {
     )
 
     expect(screen.getByTestId('child')).toBeInTheDocument()
+  })
+
+  it('fits the map to the given bounds (issue #18)', () => {
+    render(<PlantingMap className="h-full" bounds={[[1, 2], [3, 4]]} />)
+
+    expect(fakeMap.fitBounds).toHaveBeenCalledWith([
+      [1, 2],
+      [3, 4],
+    ])
+  })
+
+  it('does not call fitBounds when no bounds are given', () => {
+    render(<PlantingMap className="h-full" />)
+
+    expect(fakeMap.fitBounds).not.toHaveBeenCalled()
   })
 })

@@ -1,5 +1,6 @@
 """Domain models. Imported here so `Base.metadata` — and Alembic autogenerate — sees them."""
 
+from app.models.photo import Photo
 from app.models.region import Region
 
-__all__ = ["Region"]
+__all__ = ["Photo", "Region"]

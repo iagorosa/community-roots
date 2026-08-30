@@ -214,4 +214,4 @@ já tem um porquê registrado lá.
 
 ## Licença
 
-A definir.
+[MIT](LICENSE).

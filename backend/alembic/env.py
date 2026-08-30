@@ -2,10 +2,10 @@ from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config, pool
 
-from alembic import context
-
 # `app` is importable because `prepend_sys_path = .` in alembic.ini adds the
 # backend/ directory (where alembic.ini lives) to sys.path.
+import app.models  # noqa: F401  # registers models on Base.metadata before autogenerate runs
+from alembic import context
 from app.core.config import settings
 from app.db.base import Base
 
@@ -28,6 +28,18 @@ if config.config_file_name is not None:
 # an empty placeholder.
 target_metadata = Base.metadata
 
+# PostGIS creates `spatial_ref_sys` itself (via `CREATE EXTENSION postgis`),
+# so it's visible when Alembic reflects the database but never appears in
+# `Base.metadata` — without this filter, every autogenerate run proposes
+# dropping it.
+_POSTGIS_SYSTEM_TABLES = {"spatial_ref_sys"}
+
+
+def include_object(
+    object: object, name: str | None, type_: str, reflected: bool, compare_to: object
+) -> bool:
+    return not (type_ == "table" and name in _POSTGIS_SYSTEM_TABLES)
+
 
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode.
@@ -47,6 +59,7 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        include_object=include_object,
     )
 
     with context.begin_transaction():
@@ -67,7 +80,11 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(connection=connection, target_metadata=target_metadata)
+        context.configure(
+            connection=connection,
+            target_metadata=target_metadata,
+            include_object=include_object,
+        )
 
         with context.begin_transaction():
             context.run_migrations()

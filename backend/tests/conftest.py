@@ -10,7 +10,12 @@ into an external transaction" recipe: the outer transaction, started on the
 raw connection, is what actually gets rolled back at the end of each test.
 A nested SAVEPOINT is restarted after every `session.commit()` so that even
 route code that commits (as future CRUD endpoints will) stays contained
-inside the outer, always-rolled-back transaction.
+inside the outer, always-rolled-back transaction. The savepoint is tracked at
+the Core `Connection` level, not via `session.begin_nested()`, because a
+failed flush (e.g. a CHECK violation) ends it from inside the ORM's own
+rollback handling — restarting it through the Session at that moment raises
+`InvalidRequestError` (session mid-teardown); `Connection.begin_nested()` has
+no such state machine to fight.
 """
 
 from collections.abc import Generator
@@ -51,15 +56,18 @@ def db_session(test_engine: Engine) -> Generator[Session, None, None]:
     outer_transaction = connection.begin()
 
     session = Session(bind=connection, autoflush=False, expire_on_commit=False)
-    session.begin_nested()
+    nested_transaction = connection.begin_nested()
 
     @event.listens_for(session, "after_transaction_end")
     def _restart_savepoint(session: Session, transaction: object) -> None:
-        # A commit (or rollback) inside route code ends the SAVEPOINT; open a
-        # fresh one immediately so later statements in the same test are
-        # still contained by `outer_transaction`, not auto-committed to disk.
-        if connection.in_transaction() and not connection.in_nested_transaction():
-            session.begin_nested()
+        nonlocal nested_transaction
+        # A commit (or rollback) inside route code ends the SAVEPOINT —
+        # including one auto-rolled-back by a failed flush — so open a fresh
+        # one immediately whenever the previous one is no longer active,
+        # keeping later statements in the same test contained by
+        # `outer_transaction`, not auto-committed to disk.
+        if not nested_transaction.is_active:
+            nested_transaction = connection.begin_nested()
 
     try:
         yield session

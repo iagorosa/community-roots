@@ -59,15 +59,15 @@ class Settings(BaseSettings):
         return raw_value
 
     @model_validator(mode="after")
-    def _reject_placeholder_admin_token_in_production(self) -> "Settings":
-        is_production_with_placeholder_token = (
-            self.environment == "production"
-            and self.admin_api_token == _INSECURE_ADMIN_TOKEN_PLACEHOLDER
-        )
-        if is_production_with_placeholder_token:
+    def _reject_insecure_admin_token_in_production(self) -> "Settings":
+        if self.environment != "production":
+            return self
+
+        token_is_placeholder = self.admin_api_token == _INSECURE_ADMIN_TOKEN_PLACEHOLDER
+        token_is_empty = not self.admin_api_token.strip()
+        if token_is_placeholder or token_is_empty:
             raise ValueError(
-                "ADMIN_API_TOKEN ainda está com o valor de exemplo do "
-                ".env.example. Defina um token real antes de subir em produção."
+                "ADMIN_API_TOKEN precisa de um valor real, não vazio, antes de subir em produção."
             )
         return self
 

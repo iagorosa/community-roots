@@ -1,0 +1,32 @@
+[project]
+name = "community-roots-backend"
+version = "0.1.0"
+description = "API do Community Roots — backend FastAPI"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "alembic==1.19.1",
+    "fastapi==0.141.1",
+    "geoalchemy2==0.20.0",
+    "pillow==12.3.0",
+    "psycopg[binary]==3.3.4",
+    "pydantic-settings==2.15.0",
+    "python-multipart==0.0.32",
+    "qrcode==8.2",
+    "sqlalchemy==2.0.52",
+    "uvicorn[standard]==0.52.4",
+]
+
+[project.optional-dependencies]
+dev = [
+    "httpx==0.28.1",
+    "pytest==9.1.1",
+    "ruff==0.16.5",
+]
+
+[tool.uv]
+# Application, not a library to be imported elsewhere — no wheel to build.
+package = false
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

@@ -15,13 +15,13 @@ import uuid
 from collections.abc import Generator
 from typing import BinaryIO
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Form, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.schemas.photo import PhotoPage
-from app.services import photo_service
+from app.schemas.photo import PhotoOut, PhotoPage
+from app.services import photo_service, photo_upload_service
 from app.storage.base import StorageBackend
 from app.storage.dependency import get_storage_backend
 
@@ -51,6 +51,33 @@ def list_region_photos(
     db: Session = Depends(get_db),  # noqa: B008 — FastAPI's DI relies on this call-in-default pattern.
 ) -> PhotoPage:
     return photo_service.list_region_photos(db, region, cursor=cursor, limit=limit)
+
+
+@router.post("/{region}/photos", response_model=PhotoOut, status_code=201)
+def upload_photo(
+    region: str,
+    file: UploadFile,
+    description: str | None = Form(default=None),
+    contributor_name: str | None = Form(default=None),
+    # "desmarcado por padrão" (architecture.md §6.2): sharing GPS location is
+    # opt-in, never assumed just because the client omitted the field.
+    share_location: bool = Form(default=False),
+    db: Session = Depends(get_db),  # noqa: B008
+    storage: StorageBackend = Depends(get_storage_backend),  # noqa: B008
+) -> PhotoOut:
+    """Public (no admin token — anyone, including anonymously, can
+    contribute a photo). See `app.services.photo_upload_service.upload_photo`
+    for the validate/store/record pipeline this delegates to.
+    """
+    return photo_upload_service.upload_photo(
+        db,
+        storage,
+        region,
+        file=file,
+        description=description,
+        contributor_name=contributor_name,
+        share_location=share_location,
+    )
 
 
 def _iter_file_chunks(file: BinaryIO) -> Generator[bytes, None, None]:

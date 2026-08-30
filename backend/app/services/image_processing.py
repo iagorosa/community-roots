@@ -67,11 +67,26 @@ class InvalidImage(ValidationFailedError):
         super().__init__("O arquivo enviado não é uma imagem válida.")
 
 
+def _format_max_size_in_mb(max_bytes: int) -> str:
+    """Render `max_bytes` as a MB figure a non-technical user can act on.
+
+    Raw byte counts (e.g. "10485760 bytes") aren't a unit most people
+    reason about; MB is. Uses the everyday 1024*1024 reading of "MB" (not
+    the strict SI 1_000_000-byte megabyte) since that's how
+    `settings.max_upload_bytes`'s shipped default (10_485_760) was actually
+    chosen — that convention is what turns it into a clean "10 MB" instead
+    of "10.5 MB". Rounded to one decimal place, with a trailing ".0"
+    trimmed so a round limit reads as "10 MB", not "10.0 MB".
+    """
+    megabytes = max_bytes / (1024 * 1024)
+    return f"{megabytes:.1f}".rstrip("0").rstrip(".")
+
+
 class ImageTooLarge(ValidationFailedError):
     code = "image_too_large"
 
     def __init__(self, max_bytes: int) -> None:
-        super().__init__(f"O arquivo excede o limite de {max_bytes} bytes.")
+        super().__init__(f"O arquivo excede o limite de {_format_max_size_in_mb(max_bytes)} MB.")
 
 
 def _read_within_limit(stream: BinaryIO, *, max_bytes: int) -> bytes:

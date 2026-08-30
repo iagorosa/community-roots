@@ -75,6 +75,13 @@ class ExtractedPhotoMetadata:
     location_source: str | None
     image_bytes: bytes
     content_type: str
+    # The *final* pixel dimensions — after `ImageOps.exif_transpose` bakes
+    # orientation in, not the source image's own `.size`. Recording the
+    # pre-rotation size would be wrong whenever a photo was rotated 90°/270°:
+    # `image_bytes` (what's actually stored) already reflects the rotated
+    # size, and `width`/`height` must describe those bytes, not the input.
+    width: int
+    height: int
 
 
 def _extract_captured_at(exif: Image.Exif) -> datetime | None:
@@ -155,8 +162,9 @@ def _extract_gps(exif: Image.Exif) -> tuple[float, float] | None:
 
 
 def _reencode_without_metadata(image: Image.Image, *, format: str) -> bytes:
-    """Bake EXIF orientation into the pixels, then re-save with no metadata
-    at all.
+    """Re-save `image` (already oriented — see `process_photo_metadata`,
+    which bakes EXIF orientation into the pixels before calling this) with
+    no metadata at all.
 
     Pillow only writes an EXIF block into `save()`'s output when `exif=` is
     passed explicitly — it never falls back to the source image's own
@@ -176,10 +184,8 @@ def _reencode_without_metadata(image: Image.Image, *, format: str) -> bytes:
     prevents a re-embedded profile from surviving; see
     `tests/test_exif_processing.py::test_rewritten_png_bytes_carry_no_icc_profile`.
     """
-    transposed = ImageOps.exif_transpose(image)
-
     buffer = io.BytesIO()
-    transposed.save(buffer, format=format, icc_profile=None)
+    image.save(buffer, format=format, icc_profile=None)
     return buffer.getvalue()
 
 
@@ -206,7 +212,12 @@ def process_photo_metadata(image: Image.Image, *, share_location: bool) -> Extra
     latitude, longitude = gps if should_record_location else (None, None)
     location_source = "exif" if should_record_location else None
 
-    image_bytes = _reencode_without_metadata(image, format=original_format)
+    # Transposed once, here, and reused both for re-encoding and for the
+    # `width`/`height` reported below — so they always describe the same
+    # pixels `image_bytes` decodes to, never the pre-rotation source size.
+    transposed = ImageOps.exif_transpose(image)
+    width, height = transposed.size
+    image_bytes = _reencode_without_metadata(transposed, format=original_format)
 
     return ExtractedPhotoMetadata(
         captured_at=captured_at,
@@ -215,4 +226,6 @@ def process_photo_metadata(image: Image.Image, *, share_location: bool) -> Extra
         location_source=location_source,
         image_bytes=image_bytes,
         content_type=_content_type_for(original_format),
+        width=width,
+        height=height,
     )

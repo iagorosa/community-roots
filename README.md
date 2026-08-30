@@ -18,12 +18,12 @@ Placa no canteiro  ->  QR Code  ->  canteiro digital  ->  linha do tempo de foto
 
 ## Situação do projeto
 
-O planejamento está concluído. A implementação ainda não começou.
+O planejamento está concluído. A Fase 1 (fundação do projeto) também está.
 
 | Fase | Descrição | Situação |
 |---|---|---|
 | 0 | Planejamento e documentação | concluída |
-| 1 | Fundação do projeto | não iniciada |
+| 1 | Fundação do projeto | concluída |
 | 2 | Canteiros | não iniciada |
 | 3 | Mapa interativo | não iniciada |
 | 4 | Páginas de canteiro | não iniciada |
@@ -31,8 +31,10 @@ O planejamento está concluído. A implementação ainda não começou.
 | 6 | QR Codes | não iniciada |
 | 7 | Polimento | não iniciada |
 
-As instruções de instalação abaixo descrevem o estado ao final da Fase 1. **Elas
-ainda não funcionam.**
+As instruções de instalação abaixo já funcionam de ponta a ponta: banco de
+dados, backend até `/health` e frontend até a página inicial. A única exceção é
+o passo "Dados de desenvolvimento", que pertence à Fase 2 — veja a nota naquela
+seção.
 
 O backlog fica nas [issues](https://github.com/iagorosa/community-roots/issues),
 organizadas por [milestone](https://github.com/iagorosa/community-roots/milestones)
@@ -101,7 +103,7 @@ cp .env.example .env           # a DATABASE_URL precisa bater com o .env da raiz
 pyenv install --skip-existing 3.11.10
 
 uv venv && source .venv/bin/activate
-uv sync
+uv sync --extra dev             # --extra dev traz pytest e ruff também
 
 alembic upgrade head
 uvicorn app.main:app --reload
@@ -128,10 +130,15 @@ npm install
 npm run dev
 ```
 
-Abra <http://localhost:5173>. Em desenvolvimento, `/api` é redirecionado para o
-backend pelo proxy do Vite, então há uma origem só e nenhum CORS para configurar.
+Abra <http://localhost:5173>. Em desenvolvimento, `/api` e `/health` são
+redirecionados para o backend pelo proxy do Vite, então há uma origem só e
+nenhum CORS para configurar. A página inicial já mostra o status ao vivo de
+`/health`, confirmando que frontend, backend e banco estão conectados.
 
-### 4. Dados de desenvolvimento
+### 4. Dados de desenvolvimento (Fase 2 em diante)
+
+> Este passo depende do model `Region`, que ainda não existe nesta fase. O
+> comando abaixo só funciona a partir da Fase 2 — pule-o por enquanto.
 
 ```bash
 cd backend

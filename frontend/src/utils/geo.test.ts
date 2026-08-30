@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { RegionFeature, RegionFeatureCollection } from '../types/api'
-import { regionsBounds } from './geo'
+import { regionCenter, regionsBounds } from './geo'
 
 const BASE_PROPERTIES = {
   description: null,
@@ -17,6 +17,29 @@ function pointFeature(slug: string, lon: number, lat: number): RegionFeature {
     type: 'Feature',
     id: slug,
     geometry: { type: 'Point', coordinates: [lon, lat] },
+    properties: { ...BASE_PROPERTIES, slug, name: slug },
+  }
+}
+
+function polygonFeature(slug: string): RegionFeature {
+  // A 0.01°-square polygon (roughly the size of a real canteiro) centered
+  // on (-43.31, -21.88), for checking `regionCenter` doesn't just echo the
+  // first coordinate.
+  return {
+    type: 'Feature',
+    id: slug,
+    geometry: {
+      type: 'Polygon',
+      coordinates: [
+        [
+          [-43.315, -21.885],
+          [-43.305, -21.885],
+          [-43.305, -21.875],
+          [-43.315, -21.875],
+          [-43.315, -21.885],
+        ],
+      ],
+    },
     properties: { ...BASE_PROPERTIES, slug, name: slug },
   }
 }
@@ -52,5 +75,21 @@ describe('regionsBounds', () => {
     // coordinate — regression check against `regionsBounds` collapsing
     // everything to just the first feature.
     expect(bounds.getSouthWest().equals(bounds.getNorthEast())).toBe(false)
+  })
+})
+
+describe('regionCenter', () => {
+  it('returns the point itself for a Point geometry', () => {
+    const center = regionCenter(pointFeature('canteiro-a', -43.3129, -21.8843))
+
+    expect(center[0]).toBeCloseTo(-21.8843)
+    expect(center[1]).toBeCloseTo(-43.3129)
+  })
+
+  it('returns the bounding-box center for a Polygon geometry, not a raw vertex', () => {
+    const center = regionCenter(polygonFeature('canteiro-b'))
+
+    expect(center[0]).toBeCloseTo(-21.88)
+    expect(center[1]).toBeCloseTo(-43.31)
   })
 })

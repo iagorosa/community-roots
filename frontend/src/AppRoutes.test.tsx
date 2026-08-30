@@ -1,15 +1,50 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
+import type { ReactNode } from 'react'
 import { MemoryRouter } from 'react-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import AppRoutes from './AppRoutes'
+import type { RegionFeature } from './types/api'
 
 // `AppRoutes` is `App` without the `BrowserRouter`/`QueryClientProvider`
 // wrappers, so each route can be exercised with `MemoryRouter` and a
 // throwaway `QueryClient` — see docs/architecture.md §8 for the five
-// routes this covers (issue #14's "critério de pronto"). `/mapa` renders
-// `MapPage`, which calls `useRegions` (issue #17), hence both wrappers and
-// the `fetch` stub below.
+// routes this covers (issue #14's "critério de pronto"). `/mapa` and
+// `/regions/:slug` both fetch data (`useRegions`/`useRegion`), hence both
+// wrappers and the `fetch` stub below.
+//
+// react-leaflet is faked the same shallow way `RegionPage.test.tsx` does
+// (docs/architecture.md §10): a successful `/regions/:slug` render reaches
+// `RegionPage`'s mini-map (`PlantingMap`), and real Leaflet needs
+// layout/canvas APIs jsdom doesn't provide.
+vi.mock('react-leaflet', () => ({
+  MapContainer: ({ children, ...props }: Record<string, unknown> & { children?: ReactNode }) => (
+    <div data-testid="map-container" data-props={JSON.stringify(props)}>
+      {children}
+    </div>
+  ),
+  TileLayer: () => null,
+  GeoJSON: () => null,
+  useMap: () => ({ fitBounds: vi.fn() }),
+}))
+
+const SAMPLE_REGION: RegionFeature = {
+  type: 'Feature',
+  id: '0f1c1234-5678-90ab-cdef-1234567890ab',
+  geometry: { type: 'Point', coordinates: [-43.3129, -21.8843] },
+  properties: {
+    slug: 'canteiro-do-ipe',
+    name: 'Canteiro do Ipê',
+    description: null,
+    status: 'active',
+    qr_token: 'k3Zq8xR2mNvA',
+    photo_count: 0,
+    latest_photo_at: null,
+    created_at: '2026-08-01T10:00:00Z',
+    updated_at: '2026-08-01T10:00:00Z',
+  },
+}
+
 function renderAtPath(path: string) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
@@ -47,10 +82,19 @@ describe('AppRoutes', () => {
     expect(screen.getByRole('heading', { name: /mapa/i })).toBeInTheDocument()
   })
 
-  it('resolves /regions/:slug to the region page with the slug from the URL', () => {
+  it('resolves /regions/:slug to the region page with the region matching the slug from the URL', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(SAMPLE_REGION),
+      } as Response),
+    )
+
     renderAtPath('/regions/canteiro-do-ipe')
 
-    expect(screen.getByText('canteiro-do-ipe')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Canteiro do Ipê' })).toBeInTheDocument())
   })
 
   it('resolves /r/:qrToken to the QR redirect page with the token from the URL', () => {
@@ -66,7 +110,7 @@ describe('AppRoutes', () => {
   })
 
   it('renders the header navigation alongside a page', () => {
-    renderAtPath('/regions/canteiro-do-ipe')
+    renderAtPath('/isso-nao-existe')
 
     expect(screen.getByRole('navigation')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /mapa/i })).toBeInTheDocument()

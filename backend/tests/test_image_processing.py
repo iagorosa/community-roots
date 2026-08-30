@@ -149,6 +149,34 @@ def test_file_above_the_byte_limit_is_rejected() -> None:
         validate_upload(stream, max_bytes=10)
 
 
+def test_image_too_large_message_reads_in_whole_megabytes_for_a_round_limit() -> None:
+    """The "critério de pronto" of issue #28 requires that this message be
+    actionable for a non-technical user — raw byte counts (e.g. "10485760
+    bytes") don't clear that bar, a rounded MB figure does. 10_485_760 is
+    exactly 10 MiB (the shipped `settings.max_upload_bytes` default), so it
+    must read as a clean "10 MB", not "10.0 MB".
+    """
+    error = ImageTooLarge(10_485_760)
+
+    assert error.detail == "O arquivo excede o limite de 10 MB."
+
+
+def test_image_too_large_message_rounds_a_fractional_limit_to_one_decimal() -> None:
+    """1_572_864 bytes is exactly 1.5 MiB — proves the conversion isn't just
+    truncating to whole megabytes for a limit that doesn't land on one.
+    """
+    error = ImageTooLarge(1_572_864)
+
+    assert error.detail == "O arquivo excede o limite de 1.5 MB."
+
+
+def test_image_too_large_message_never_contains_a_raw_byte_count() -> None:
+    error = ImageTooLarge(10_485_760)
+
+    assert "10485760" not in error.detail
+    assert "bytes" not in error.detail
+
+
 def test_file_above_the_byte_limit_is_rejected_after_several_chunks() -> None:
     # Unlike `test_file_above_the_byte_limit_is_rejected` (which trips on the
     # very first 64 KiB chunk), this picks a limit several chunks in, so the

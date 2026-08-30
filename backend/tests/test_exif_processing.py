@@ -182,6 +182,29 @@ def test_orientation_is_baked_into_pixels_before_exif_is_dropped() -> None:
     assert reopened.size == (6, 4)
 
 
+def test_width_and_height_reflect_the_source_image_when_not_rotated() -> None:
+    image = _build_image_with_exif(width=4, height=6)
+
+    result = process_photo_metadata(image, share_location=True)
+
+    assert (result.width, result.height) == (4, 6)
+
+
+def test_width_and_height_reflect_the_post_rotation_size_not_the_source_size() -> None:
+    """Orientation 6 (rotate 90° CW) swaps width/height once applied — the
+    stored `width`/`height` must be the *final* (post-rotation) size, the
+    same one `image_bytes` actually decodes to, not the pre-rotation size
+    read straight off the source image.
+    """
+    image = _build_image_with_exif(width=4, height=6, orientation=_ORIENTATION_ROTATED_90)
+
+    result = process_photo_metadata(image, share_location=True)
+
+    assert (result.width, result.height) == (6, 4)
+    reopened = Image.open(io.BytesIO(result.image_bytes))
+    assert reopened.size == (result.width, result.height)
+
+
 def test_content_type_matches_the_images_format() -> None:
     image = _build_image_with_exif(format="PNG")
 

@@ -1,18 +1,27 @@
-"""Region read operations: listing and resolving a single region by slug or
-UUID. See docs/architecture.md §5.1 for the GeoJSON response shape and §4.2
-for the `regions` table this queries.
+"""Region read and admin-write operations. See docs/architecture.md §5.1 for
+the GeoJSON response shape, §4.2 for the `regions` table, and §9 for why
+writes are admin-only (issue #12).
 """
 
 import json
+import re
+import secrets
+import unicodedata
 import uuid
 from typing import Any
 
 from sqlalchemy import ColumnElement, Row, func, literal, select
 from sqlalchemy.orm import Session
 
-from app.core.errors import NotFoundError
+from app.core.errors import NotFoundError, ValidationFailedError
 from app.models.region import Region
-from app.schemas.region import RegionFeature, RegionFeatureCollection, RegionProperties
+from app.schemas.region import (
+    RegionCreate,
+    RegionFeature,
+    RegionFeatureCollection,
+    RegionProperties,
+    RegionUpdate,
+)
 
 
 class RegionNotFound(NotFoundError):
@@ -100,3 +109,113 @@ def _identifier_filter(identifier: str) -> ColumnElement[bool]:
     except ValueError:
         return Region.slug == identifier
     return Region.id == region_id
+
+
+def _fetch_feature_by_id(db: Session, region_id: uuid.UUID) -> RegionFeature:
+    """Fetch a region by id regardless of `status`.
+
+    Used after an admin create/update: the caller who just archived a region
+    still needs to see the result, even though `_PUBLICLY_VISIBLE` would now
+    hide it from everyone else.
+    """
+    row = db.execute(select(*_region_feature_columns()).where(Region.id == region_id)).first()
+    if row is None:
+        raise RegionNotFound(str(region_id))
+    return _row_to_feature(row)
+
+
+def _resolve_region_id(db: Session, identifier: str) -> uuid.UUID:
+    """Like `_identifier_filter`, but for admin writes: a `draft`/`archived`
+    region must still be resolvable so it can be edited.
+    """
+    region_id = db.execute(
+        select(Region.id).where(_identifier_filter(identifier))
+    ).scalar_one_or_none()
+    if region_id is None:
+        raise RegionNotFound(identifier)
+    return region_id
+
+
+def _slugify(name: str) -> str:
+    ascii_only = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode("ascii")
+    slug = re.sub(r"[^a-z0-9]+", "-", ascii_only.lower()).strip("-")
+    return slug or "canteiro"
+
+
+def _generate_unique_slug(db: Session, name: str, *, exclude_id: uuid.UUID | None = None) -> str:
+    """Derive a URL slug from `name`, disambiguated with a numeric suffix on collision.
+
+    Check-then-write: two concurrent admin writes racing for the same slug
+    would both pass this check and hit `uq_regions_slug` at commit time,
+    surfacing as an unhandled `IntegrityError` (500). Accepted for the MVP's
+    low-concurrency admin usage rather than adding a retry loop.
+    """
+    base_slug = _slugify(name)
+
+    query = select(Region.slug).where(Region.slug.like(f"{base_slug}%"))
+    if exclude_id is not None:
+        query = query.where(Region.id != exclude_id)
+    taken_slugs = set(db.execute(query).scalars())
+
+    if base_slug not in taken_slugs:
+        return base_slug
+
+    suffix = 2
+    while f"{base_slug}-{suffix}" in taken_slugs:
+        suffix += 1
+    return f"{base_slug}-{suffix}"
+
+
+def _geometry_to_geom_expression(geometry: Any) -> ColumnElement[Any]:
+    """Build the geometry the same way reads produce it: through PostGIS, not Python.
+
+    `ST_GeomFromGeoJSON` doesn't set an SRID on its own, so it's pinned to
+    4326 explicitly — the CHECK/typmod on `regions.geom` requires it.
+    """
+    geometry_json = json.dumps(geometry.model_dump())
+    return func.ST_SetSRID(func.ST_GeomFromGeoJSON(geometry_json), 4326)
+
+
+def create_region(db: Session, payload: RegionCreate) -> RegionFeature:
+    region = Region(
+        slug=_generate_unique_slug(db, payload.name),
+        name=payload.name,
+        description=payload.description,
+        geom=_geometry_to_geom_expression(payload.geometry),
+        status=payload.status,
+        qr_token=secrets.token_urlsafe(9),
+    )
+    db.add(region)
+    db.commit()
+    return _fetch_feature_by_id(db, region.id)
+
+
+# `RegionUpdate.name`/`.status` are `X | None = None` only so `None` can mean
+# "field omitted" (via `exclude_unset`) — both columns are NOT NULL, unlike
+# `description`, so a payload that explicitly sends `null` for either must be
+# rejected here. Left unchecked, it reaches Postgres as a `NotNullViolation`
+# (500) instead of a 422.
+_NOT_NULLABLE_UPDATE_FIELDS = ("name", "status")
+
+
+def update_region(db: Session, identifier: str, payload: RegionUpdate) -> RegionFeature:
+    region_id = _resolve_region_id(db, identifier)
+    region = db.get(Region, region_id)
+    assert region is not None  # `_resolve_region_id` just confirmed this row exists
+
+    changed_fields = payload.model_dump(exclude_unset=True, exclude={"geometry"})
+    for field in _NOT_NULLABLE_UPDATE_FIELDS:
+        if field in changed_fields and changed_fields[field] is None:
+            raise ValidationFailedError(
+                f'O campo "{field}" não pode ser removido, apenas alterado.'
+            )
+
+    if "name" in changed_fields and changed_fields["name"] != region.name:
+        region.slug = _generate_unique_slug(db, changed_fields["name"], exclude_id=region.id)
+    for field, value in changed_fields.items():
+        setattr(region, field, value)
+    if payload.geometry is not None:
+        region.geom = _geometry_to_geom_expression(payload.geometry)
+
+    db.commit()
+    return _fetch_feature_by_id(db, region.id)

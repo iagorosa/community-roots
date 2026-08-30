@@ -50,8 +50,10 @@ Para entender o projeto por dentro:
 
 ## Tecnologias
 
-**Frontend** — React 19, Vite 7, TypeScript, Tailwind CSS v4, React Leaflet 5,
-React Router 7, TanStack Query 5.
+**Frontend** — React 19.2.8, Vite 8.2.2, TypeScript 6.0.2, Tailwind CSS 4.3.3
+(via `@tailwindcss/vite`, sem `tailwind.config.js`), React Leaflet 5.0.0 +
+Leaflet 1.9.4, React Router 8.3.1, TanStack Query 5.102.8. Versões exatas
+fixadas em `frontend/package.json`.
 
 **Backend** — Python 3.11, FastAPI, SQLAlchemy 2.0, GeoAlchemy2, Pydantic v2,
 Alembic.

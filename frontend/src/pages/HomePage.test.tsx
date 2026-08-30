@@ -1,51 +1,52 @@
-import { render, screen, waitFor } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { render, screen } from '@testing-library/react'
+import { MemoryRouter } from 'react-router'
+import { describe, expect, it } from 'vitest'
 import HomePage from './HomePage'
 
-// Smoke test: mocks `fetch` directly (rather than pulling in MSW) since
-// this HomePage is provisional and a single request — see issue #7.
+// Words the reader (child or parent, per docs/architecture.md §8's
+// vocabulary rule) must never see, however the copy gets rewritten.
+const FORBIDDEN_JARGON = [/região/i, /regiões/i, /polígono/i, /geojson/i, /\btoken\b/i]
+
+function renderHomePage() {
+  return render(
+    <MemoryRouter>
+      <HomePage />
+    </MemoryRouter>,
+  )
+}
+
 describe('HomePage', () => {
-  afterEach(() => {
-    vi.unstubAllGlobals()
+  it('shows the project name as the main heading', () => {
+    renderHomePage()
+
+    expect(screen.getByRole('heading', { level: 1, name: /community roots/i })).toBeInTheDocument()
   })
 
-  it('shows the loading state and then the backend health status on success', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        status: 200,
-        json: () => Promise.resolve({ status: 'ok', database: 'ok' }),
-      } as Response),
-    )
+  it('explains what the project is and its environmental purpose', () => {
+    const { container } = renderHomePage()
 
-    render(<HomePage />)
-
-    expect(screen.getByText(/verificando status do servidor/i)).toBeInTheDocument()
-
-    await waitFor(() => {
-      expect(screen.getByText(/status do servidor/i)).toBeInTheDocument()
-    })
-
-    const status = screen.getByRole('status')
-    expect(status).toHaveTextContent('ok')
-    expect(status).toHaveTextContent('banco de dados')
+    expect(container.textContent).toMatch(/plant|verde|natureza|meio ambiente/i)
   })
 
-  it('shows a readable error message when the request fails', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        ok: false,
-        status: 503,
-        json: () => Promise.resolve({}),
-      } as Response),
-    )
+  it('explains how to participate by mentioning canteiros', () => {
+    const { container } = renderHomePage()
 
-    render(<HomePage />)
+    expect(container.textContent).toMatch(/canteiro/i)
+  })
 
-    await waitFor(() => {
-      expect(screen.getByText(/não foi possível carregar o status do servidor/i)).toBeInTheDocument()
-    })
+  it('has an accessible call-to-action link to the map', () => {
+    // `HomePage` renders standalone here, without `Header` (see
+    // `renderHomePage`), so the CTA is the only link matching /mapa/i.
+    renderHomePage()
+
+    expect(screen.getByRole('link', { name: /mapa/i })).toHaveAttribute('href', '/mapa')
+  })
+
+  it('never shows technical jargon to the user', () => {
+    const { container } = renderHomePage()
+
+    for (const pattern of FORBIDDEN_JARGON) {
+      expect(container.textContent).not.toMatch(pattern)
+    }
   })
 })

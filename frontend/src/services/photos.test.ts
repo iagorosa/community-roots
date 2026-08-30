@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Photo, PhotoPage } from '../types/api'
-import { fetchRegionPhotos } from './photos'
+import { fetchRegionPhotos, uploadPhoto } from './photos'
 
 const SAMPLE_PHOTO: Photo = {
   id: '0f1c1234-5678-90ab-cdef-1234567890ab',
@@ -58,5 +58,68 @@ describe('fetchRegionPhotos', () => {
     await fetchRegionPhotos('canteiro-do-ipe', { limit: 5 })
 
     expect(fetchMock).toHaveBeenCalledWith('/api/regions/canteiro-do-ipe/photos?limit=5', undefined)
+  })
+})
+
+describe('uploadPhoto', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('POSTs a FormData body with the file to /api/regions/{identifier}/photos', async () => {
+    const fetchMock = stubFetchResolving(SAMPLE_PHOTO, 201)
+    const file = new File(['fake-image-bytes'], 'canteiro.jpg', { type: 'image/jpeg' })
+
+    const result = await uploadPhoto('canteiro-do-ipe', { file })
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [path, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(path).toBe('/api/regions/canteiro-do-ipe/photos')
+    expect(init.method).toBe('POST')
+    expect(init.body).toBeInstanceOf(FormData)
+    const body = init.body as FormData
+    expect(body.get('file')).toBe(file)
+    expect(result).toEqual(SAMPLE_PHOTO)
+  })
+
+  it('does not set a Content-Type header, so the browser sets the multipart boundary itself', async () => {
+    const fetchMock = stubFetchResolving(SAMPLE_PHOTO, 201)
+    const file = new File(['fake-image-bytes'], 'canteiro.jpg', { type: 'image/jpeg' })
+
+    await uploadPhoto('canteiro-do-ipe', { file })
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(init.headers).toBeUndefined()
+  })
+
+  it('includes description, contributor name, and share_location when given', async () => {
+    const fetchMock = stubFetchResolving(SAMPLE_PHOTO, 201)
+    const file = new File(['fake-image-bytes'], 'canteiro.jpg', { type: 'image/jpeg' })
+
+    await uploadPhoto('canteiro-do-ipe', {
+      file,
+      description: 'Primeira muda plantada.',
+      contributorName: 'Ana',
+      shareLocation: true,
+    })
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    const body = init.body as FormData
+    expect(body.get('description')).toBe('Primeira muda plantada.')
+    expect(body.get('contributor_name')).toBe('Ana')
+    expect(body.get('share_location')).toBe('true')
+  })
+
+  it('omits description and contributor name, and sends share_location=false, when not given', async () => {
+    const fetchMock = stubFetchResolving(SAMPLE_PHOTO, 201)
+    const file = new File(['fake-image-bytes'], 'canteiro.jpg', { type: 'image/jpeg' })
+
+    await uploadPhoto('canteiro-do-ipe', { file })
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    const body = init.body as FormData
+    expect(body.get('description')).toBeNull()
+    expect(body.get('contributor_name')).toBeNull()
+    expect(body.get('share_location')).toBe('false')
   })
 })

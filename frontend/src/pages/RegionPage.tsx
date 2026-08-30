@@ -4,31 +4,12 @@ import ErrorState from '../components/feedback/ErrorState.tsx'
 import LoadingState from '../components/feedback/LoadingState.tsx'
 import PlantingMap from '../components/map/PlantingMap.tsx'
 import PhotoTimeline from '../components/photos/PhotoTimeline.tsx'
+import PhotoUploadForm from '../components/photos/PhotoUploadForm.tsx'
 import { usePhotos } from '../hooks/usePhotos.ts'
 import { useRegion } from '../hooks/useRegion.ts'
 import { ApiError } from '../services/apiClient.ts'
 import { regionCenter } from '../utils/geo.ts'
 import NotFoundPage from './NotFoundPage.tsx'
-
-// Photo upload lands in Fase 5 (issue #69 tracks the backend `photo_count`
-// gap this page just displays as-is). Disabled here rather than hidden, so
-// a visiting family knows the feature exists and is coming, not that it's
-// missing — architecture.md §8: interface text stays in plain Portuguese,
-// no internal phase numbers.
-function PhotoUploadSection() {
-  return (
-    <div className="mt-6">
-      <button
-        type="button"
-        disabled
-        className="cursor-not-allowed rounded-lg bg-slate-300 px-6 py-3 font-semibold text-slate-500"
-      >
-        Enviar foto
-      </button>
-      <p className="mt-2 text-sm text-slate-500">Em breve você vai poder enviar fotos daqui.</p>
-    </div>
-  )
-}
 
 // The photo timeline (issue #24) fails or loads independently of the rest
 // of the page: a slow/broken photos endpoint shouldn't take down a canteiro
@@ -100,7 +81,7 @@ function RegionPage() {
         <PlantingMap className="h-full" center={regionCenter(data)} />
       </div>
 
-      <PhotoUploadSection />
+      <PhotoUploadForm slug={slug ?? ''} />
 
       <div className="mt-4 flex flex-col gap-3">
         <h2 className="text-xl font-bold text-emerald-700">Fotos</h2>

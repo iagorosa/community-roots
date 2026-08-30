@@ -11,12 +11,31 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? ''
  */
 export class ApiError extends Error {
   readonly status?: number
+  // Stable, English identifier from the backend's error body
+  // (docs/architecture.md §5.3, e.g. "image_too_large") — present whenever
+  // the response had a parseable `{ detail, code }` body. Callers should
+  // prefer branching on this over `message.includes(...)`, since `message`
+  // is Portuguese prose meant for display, not comparison.
+  readonly code?: string
 
-  constructor(message: string, status?: number) {
+  constructor(message: string, status?: number, code?: string) {
     super(message)
     this.name = 'ApiError'
     this.status = status
+    this.code = code
   }
+}
+
+// Shape of the JSON body the backend sends on a non-2xx response
+// (docs/architecture.md §5.3). Narrowed defensively in `apiFetch` below —
+// this type only describes what we hope for, not what's guaranteed.
+interface ApiErrorBody {
+  detail?: string
+  code?: string
+}
+
+function isApiErrorBody(value: unknown): value is ApiErrorBody {
+  return typeof value === 'object' && value !== null
 }
 
 /**
@@ -34,7 +53,26 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   }
 
   if (!response.ok) {
-    throw new ApiError(`O servidor respondeu com erro (${response.status}).`, response.status)
+    const genericMessage = `O servidor respondeu com erro (${response.status}).`
+
+    // The backend sends actionable, user-facing `detail`/`code` on error
+    // responses (docs/architecture.md §5.3) — but the body might not be
+    // JSON at all (a proxy/gateway error page, say), so parsing it is
+    // wrapped defensively: a parse failure here must never replace the
+    // real HTTP error with a confusing "unexpected token in JSON" one.
+    let body: unknown
+    try {
+      body = await response.json()
+    } catch {
+      throw new ApiError(genericMessage, response.status)
+    }
+
+    if (isApiErrorBody(body) && typeof body.detail === 'string') {
+      const code = typeof body.code === 'string' ? body.code : undefined
+      throw new ApiError(body.detail, response.status, code)
+    }
+
+    throw new ApiError(genericMessage, response.status)
   }
 
   return (await response.json()) as T

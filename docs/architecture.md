@@ -1,136 +1,142 @@
-# Community Roots — Architecture
+# Community Roots — Arquitetura
 
-Status: **planning phase**. This document describes the target architecture and
-the reasoning behind each decision. It is the reference for all implementation
-phases described in [implementation-plan.md](./implementation-plan.md).
+Situação atual: **fase de planejamento**. Este documento descreve a arquitetura
+alvo e o motivo de cada decisão. É a referência para todas as fases descritas em
+[implementation-plan.md](./implementation-plan.md).
 
-Product specification: [../PROJECT_BOOTSTRAP.md](../PROJECT_BOOTSTRAP.md).
+Especificação do produto: [../PROJECT_BOOTSTRAP.md](../PROJECT_BOOTSTRAP.md).
+
+> Nota sobre idioma: esta documentação é escrita em português porque o projeto é
+> comunitário e aberto à participação local. O código — identificadores,
+> comentários, nomes de arquivo, rotas da API — continua em inglês.
 
 ---
 
-## 1. System overview
+## 1. Visão geral do sistema
 
-Community Roots is a well-structured monolith split into two deployable units
-plus one database:
+O Community Roots é um monolito bem organizado, dividido em duas unidades
+publicáveis e um banco de dados:
 
 ```
-Browser (mobile-first)
+Navegador (mobile-first)
       |
       |  HTTPS / JSON + multipart
       v
-React SPA (Vite)  ---- static build, served by any static host
+SPA em React (Vite)  ---- build estático, servido por qualquer host de arquivos
       |
       |  REST /api/*
       v
-FastAPI backend  ----> StorageBackend (local filesystem today, S3-compatible later)
+Backend FastAPI  ----> StorageBackend (disco local hoje, S3 no futuro)
       |
       |  SQLAlchemy + GeoAlchemy2
       v
 PostgreSQL 16 + PostGIS 3.4
 ```
 
-There are no microservices, no message broker, and no background workers in the
-MVP. Every request is handled synchronously.
+Não há microsserviços, fila de mensagens nem worker em segundo plano no MVP.
+Toda requisição é atendida de forma síncrona.
 
-The physical-to-digital chain the product depends on:
+A corrente do físico para o digital, que é o coração do produto:
 
 ```
-Physical marker -> QR code -> /r/{qr_token} -> /regions/{slug} -> photo timeline
+Placa no canteiro -> QR Code -> canteiro digital -> linha do tempo de fotos
 ```
 
 ---
 
-## 2. Technology decisions
+## 2. Decisões de tecnologia
 
-| Layer | Choice | Why |
+| Camada | Escolha | Por quê |
 |---|---|---|
-| Frontend framework | React 19 + Vite 7 | Matches the prior prototype's direction; Vite gives fast HMR and a trivial static build. |
-| Frontend language | TypeScript | The developer is backend-strong; types on `Region`/`Photo` mirror the Pydantic schemas and catch API shape errors at edit time. |
-| Styling | Tailwind CSS v4 via `@tailwindcss/vite` | See [§2.1](#21-tailwind-v4-decision). |
-| Map | `react-leaflet` v5 + `leaflet` 1.9 | See [§2.2](#22-map-decision). |
-| Routing | `react-router` v7 (declarative mode) | Standard, small, no framework lock-in. |
-| Server state | TanStack Query v5 | Loading/error/refetch states are the bulk of this app's UI logic. Writing that by hand in every page is the larger complexity. |
-| Backend | FastAPI + Pydantic v2 | Automatic OpenAPI docs, request validation, multipart support. |
-| ORM | SQLAlchemy 2.0 (typed `Mapped[...]`) + GeoAlchemy2 | GeoAlchemy2 maps PostGIS geometry columns to real Python types and exposes `ST_*` functions through SQLAlchemy. |
-| Migrations | Alembic | Required by the spec. Autogenerate is used as a starting point only; every migration is reviewed by hand. |
-| Database | PostgreSQL 16 + PostGIS 3.4 (`postgis/postgis:16-3.4`) | The product is geographic by nature; polygons and spatial predicates are core, not future extras. |
-| Local infra | Docker Compose (database only) | See [§2.3](#23-runtime-topology-decision). |
-| Python env | pyenv 3.11.10 + `uv` virtualenv | pyenv is already the developer's tool; `uv` gives fast, reproducible installs with a lockfile. Plain `venv` + `pip` is documented as a fallback. |
-| Backend tests | pytest + FastAPI `TestClient` | Synchronous stack, so no async test harness is needed. |
-| Frontend tests | Vitest + Testing Library + MSW | Same transform pipeline as Vite; MSW mocks the API at the network layer. |
-| QR codes | `qrcode` + `Pillow` | Pure Python, no external service, no API key. |
+| Framework de frontend | React 19 + Vite 7 | Segue a direção do protótipo anterior; o Vite dá HMR rápido e build estático trivial. |
+| Linguagem do frontend | TypeScript | O desenvolvedor é mais forte em backend; tipos em `Region` e `Photo` espelham os schemas Pydantic e pegam erro de formato de dado em tempo de edição. |
+| Estilo | Tailwind CSS v4 via `@tailwindcss/vite` | Ver [§2.1](#21-decisão-do-tailwind-v4). |
+| Mapa | `react-leaflet` v5 + `leaflet` 1.9 | Ver [§2.2](#22-decisão-do-mapa). |
+| Rotas | `react-router` v7 (modo declarativo) | Padrão do ecossistema, pequeno, sem amarrar a um framework. |
+| Estado de servidor | TanStack Query v5 | Estados de carregamento, erro e recarga são a maior parte da lógica de tela deste app. Reescrever isso em cada página é a complexidade maior. |
+| Backend | FastAPI + Pydantic v2 | Documentação OpenAPI automática, validação de request e suporte a multipart. |
+| ORM | SQLAlchemy 2.0 (tipado, com `Mapped[...]`) + GeoAlchemy2 | O GeoAlchemy2 mapeia colunas de geometria do PostGIS para tipos Python reais e expõe as funções `ST_*` através do SQLAlchemy. |
+| Migrations | Alembic | Exigido pela especificação. O autogenerate serve só como ponto de partida: toda migration é revisada à mão. |
+| Banco de dados | PostgreSQL 16 + PostGIS 3.4 (`postgis/postgis:16-3.4`) | O produto é geográfico por natureza; polígonos e consultas espaciais são o núcleo, não um extra futuro. |
+| Infra local | Docker Compose (só o banco) | Ver [§2.3](#23-decisão-de-topologia-de-execução). |
+| Ambiente Python | pyenv 3.11.10 + virtualenv do `uv` | O pyenv já é a ferramenta do desenvolvedor; o `uv` dá instalação rápida e reproduzível com lockfile. O `venv` + `pip` fica documentado como alternativa. |
+| Testes de backend | pytest + `TestClient` do FastAPI | A pilha é síncrona, então não é preciso harness de teste assíncrono. |
+| Testes de frontend | Vitest + Testing Library + MSW | Mesmo pipeline de transformação do Vite; o MSW simula a API na camada de rede. |
+| QR Codes | `qrcode` + `Pillow` | Python puro, sem serviço externo e sem API key. |
 
-### 2.1 Tailwind v4 decision
+### 2.1 Decisão do Tailwind v4
 
-The previous prototype broke on Tailwind setup, specifically around
-`npx tailwindcss init -p`. Tailwind v4 removes that failure mode entirely:
+O protótipo anterior quebrou no setup do Tailwind, especificamente em torno de
+`npx tailwindcss init -p`. O Tailwind v4 elimina esse modo de falha por completo:
 
-- There is no `init` command and no required `tailwind.config.js`.
-- There is no PostCSS config to maintain — the official `@tailwindcss/vite`
-  plugin handles the pipeline.
-- Setup is two lines: the plugin in `vite.config.ts`, and `@import "tailwindcss";`
-  at the top of `src/styles/index.css`.
-- Theme customization, when needed, lives in CSS via `@theme { ... }`.
+- Não existe mais comando `init`, nem `tailwind.config.js` obrigatório.
+- Não há configuração de PostCSS para manter — o plugin oficial
+  `@tailwindcss/vite` cuida do pipeline.
+- O setup são duas linhas: o plugin no `vite.config.ts` e
+  `@import "tailwindcss";` no topo de `src/styles/index.css`.
+- Quando for preciso customizar o tema, isso vive no próprio CSS, num bloco
+  `@theme { ... }`.
 
-The exact pinned versions are recorded in `frontend/package.json` and repeated in
-the README so the working combination is never guessed at again.
+As versões exatas ficam registradas em `frontend/package.json` e repetidas no
+README, para que a combinação que funciona nunca mais precise ser adivinhada.
 
-### 2.2 Map decision
+### 2.2 Decisão do mapa
 
-Leaflet is used through `react-leaflet`, never through direct `L.map(...)` calls.
-This removes the three failure modes hit by the prior prototype:
+O Leaflet é usado através do `react-leaflet`, nunca por chamada direta a
+`L.map(...)`. Isso elimina os três problemas enfrentados no protótipo anterior:
 
-- **Double initialization.** `react-leaflet` owns the map instance lifecycle, so
-  there is no `L.map("map")` bound to a global DOM id that can be initialized
-  twice under React Strict Mode.
-- **Container sizing.** The map container is given an explicit height by CSS
-  (a flex-sized wrapper on the map page, a fixed `aspect-ratio` box on the region
-  page). This is the actual cause of the classic "grey half-rendered map"; it is
-  fixed by layout, not by sprinkling `invalidateSize()`.
-- **Manual lifecycle.** No `useEffect` wiring for map creation or teardown.
+- **Inicialização dupla.** O `react-leaflet` é dono do ciclo de vida da instância
+  do mapa, então não existe um `L.map("map")` amarrado a um id global do DOM que
+  possa ser inicializado duas vezes sob o Strict Mode do React.
+- **Dimensão do container.** O container do mapa recebe altura explícita por CSS
+  (um wrapper dimensionado por flex na página do mapa; uma caixa de
+  `aspect-ratio` fixo na página do canteiro). Essa é a causa real do clássico
+  "mapa cinza pela metade" — o conserto é de layout, não de espalhar
+  `invalidateSize()` pelo código.
+- **Ciclo de vida manual.** Nenhum `useEffect` para criar ou destruir o mapa.
 
-`invalidateSize()` is used in exactly one place, if needed: a small hook reacting
-to a container resize on the region page. If layout alone proves sufficient, that
-hook is not written.
+O `invalidateSize()` é usado em exatamente um lugar, se necessário: um hook
+pequeno reagindo ao redimensionamento do container na página do canteiro. Se o
+layout sozinho resolver, esse hook não chega a existir.
 
-Tiles come from OpenStreetMap, with the tile URL and attribution read from
-environment variables so a different provider can be swapped in without a code
-change. No paid API key is required.
+Os tiles vêm do OpenStreetMap, com a URL e a atribuição lidas de variáveis de
+ambiente, para trocar de provedor sem alterar código. Nenhuma API key paga é
+necessária.
 
-### 2.3 Runtime topology decision
+### 2.3 Decisão de topologia de execução
 
-Only PostgreSQL/PostGIS runs in Docker Compose. The backend and frontend run
-directly on the host.
+Só o PostgreSQL/PostGIS roda em Docker Compose. Backend e frontend rodam direto
+na máquina.
 
-Rationale: for a single developer, container-mounted Python with a reload watcher
-is measurably slower to iterate on and adds a debugging layer for no benefit here.
-The database, by contrast, genuinely benefits from isolation — PostGIS is
-tedious to install natively, and the developer already runs other Postgres
-instances on this machine that must not be disturbed.
+Motivo: para um desenvolvedor sozinho, Python dentro de container com watcher de
+reload é perceptivelmente mais lento de iterar e adiciona uma camada a mais para
+depurar, sem benefício aqui. O banco, ao contrário, ganha de verdade com
+isolamento — instalar PostGIS nativamente é chato, e a máquina já roda outras
+instâncias de Postgres que não podem ser perturbadas.
 
-The database port is exposed through the `POSTGRES_PORT` variable (default
-`5432`) precisely because other Postgres containers already occupy `5433` and
-`54322` on this machine.
+A porta do banco é exposta através da variável `POSTGRES_PORT` (padrão `5432`)
+justamente porque as portas `5433` e `54322` já estão ocupadas por outros
+contêineres Postgres nesta máquina.
 
-A backend `Dockerfile` is added in Phase 7 for deployment, not for local
-development.
+Um `Dockerfile` do backend entra na Fase 7, para publicação — não para
+desenvolvimento local.
 
 ---
 
-## 3. Repository structure
+## 3. Estrutura do repositório
 
 ```
 community_roots/
 ├── README.md
-├── PROJECT_BOOTSTRAP.md          # product spec (source of truth for scope)
+├── PROJECT_BOOTSTRAP.md          # especificação do produto (fonte do escopo)
 ├── docker-compose.yml
-├── .env.example                  # variables consumed by docker-compose
+├── .env.example                  # variáveis consumidas pelo docker-compose
 ├── docs/
 │   ├── architecture.md
 │   └── implementation-plan.md
 ├── infrastructure/
-│   └── postgres/init/            # runs once on first container start
-│       └── 01-init.sql           # CREATE EXTENSION postgis; create test database
+│   └── postgres/init/            # roda uma única vez, no primeiro start
+│       └── 01-init.sql           # CREATE EXTENSION postgis; cria o banco de teste
 ├── backend/
 │   ├── .python-version           # 3.11.10
 │   ├── .env.example
@@ -138,21 +144,21 @@ community_roots/
 │   ├── alembic.ini
 │   ├── alembic/versions/
 │   ├── app/
-│   │   ├── main.py               # app factory, router mounting, CORS, error handlers
+│   │   ├── main.py               # app factory, montagem de routers, CORS, handlers
 │   │   ├── core/
 │   │   │   ├── config.py         # Settings (pydantic-settings)
-│   │   │   ├── security.py       # admin token dependency
-│   │   │   └── errors.py         # domain exceptions -> HTTP responses
+│   │   │   ├── security.py       # dependência do token administrativo
+│   │   │   └── errors.py         # exceções de domínio -> respostas HTTP
 │   │   ├── db/
 │   │   │   ├── base.py           # DeclarativeBase
-│   │   │   └── session.py        # engine, session factory, get_db dependency
-│   │   ├── models/               # SQLAlchemy models (region.py, photo.py)
-│   │   ├── schemas/              # Pydantic request/response models
-│   │   ├── services/             # business logic, no FastAPI imports
-│   │   ├── storage/              # StorageBackend protocol + local implementation
+│   │   │   └── session.py        # engine, session factory, dependência get_db
+│   │   ├── models/               # models SQLAlchemy (region.py, photo.py)
+│   │   ├── schemas/              # modelos Pydantic de request e response
+│   │   ├── services/             # regra de negócio, sem importar FastAPI
+│   │   ├── storage/              # protocolo StorageBackend + implementação local
 │   │   └── api/routes/           # health.py, regions.py, photos.py
 │   ├── scripts/seed.py
-│   ├── storage/                  # local uploads (gitignored)
+│   ├── storage/                  # uploads locais (fora do Git)
 │   └── tests/
 └── frontend/
     ├── .nvmrc                    # 22.22.1
@@ -165,140 +171,146 @@ community_roots/
         │   ├── map/              # PlantingMap, RegionLayer, RegionPopup
         │   ├── photos/           # PhotoTimeline, PhotoCard, PhotoUploadForm
         │   └── feedback/         # LoadingState, ErrorState, EmptyState
-        ├── services/             # apiClient, regions, photos — the only fetch callers
+        ├── services/             # apiClient, regions, photos — os únicos que chamam fetch
         ├── hooks/                # useRegions, useRegion, useRegionPhotos, useUploadPhoto
-        ├── types/                # API type definitions
+        ├── types/                # definições de tipo da API
         ├── utils/
         └── styles/index.css
 ```
 
-**Layering rule for the backend:** routes parse and authorize, services decide,
-models and storage persist. Services never import from `app.api`; routes never
-build SQL. This is what makes a future admin interface or CLI reuse the same
-service functions.
+**Regra de camada do backend:** as rotas validam e autorizam, os services
+decidem, os models e o storage persistem. Service nunca importa nada de
+`app.api`; rota nunca monta SQL. É isso que faz uma futura interface
+administrativa, ou uma CLI, reaproveitarem as mesmas funções de service.
 
-**Layering rule for the frontend:** components never call `fetch`. All network
-access goes through `src/services/`, wrapped by hooks in `src/hooks/`. This keeps
-components testable with plain props.
+**Regra de camada do frontend:** componente nenhum chama `fetch`. Todo acesso à
+rede passa por `src/services/`, embrulhado por hooks em `src/hooks/`. É isso que
+mantém os componentes testáveis apenas com props.
 
 ---
 
-## 4. Data model
+## 4. Modelo de dados
 
-### 4.1 Geometry decision: `geometry(Geometry, 4326)`
+### 4.1 Decisão de geometria: `geometry(Geometry, 4326)`
 
-The `regions.geom` column is declared as `geometry(Geometry, 4326)` with a check
-constraint restricting it to `POINT`, `POLYGON`, and `MULTIPOLYGON`.
+A coluna `regions.geom` é declarada como `geometry(Geometry, 4326)`, com uma
+constraint CHECK que a restringe a `POINT`, `POLYGON` e `MULTIPOLYGON`.
 
-**Why a generic geometry type.** The MVP must work before the geographer delivers
-official data (spec §2). A permissive type lets a region start as a placeholder
-point or a rough hand-drawn polygon and later be replaced by a surveyed
-`MultiPolygon` with a plain `UPDATE` — no column type migration, no data
-rewrite, no application redesign. The check constraint keeps that permissiveness
-bounded so the column can never hold something the map cannot render.
+**Por que um tipo genérico de geometria.** O MVP precisa funcionar antes de o
+geógrafo entregar os dados oficiais (especificação §2). Um tipo permissivo deixa
+um canteiro nascer como ponto placeholder ou polígono desenhado a mão e depois
+ser substituído por um `MultiPolygon` levantado em campo, com um `UPDATE` simples
+— sem migration de tipo de coluna, sem reescrita de dado, sem redesenho da
+aplicação. A constraint CHECK mantém essa permissividade dentro de um limite: a
+coluna nunca pode guardar algo que o mapa não sabe desenhar.
 
-**Why `geometry` and not `geography`.** SRID 4326 `geometry` is the conventional
-PostGIS choice and has the complete function surface, including everything
-`ST_AsGeoJSON` and Leaflet need. `geography` buys accurate metre-based distances
-without projection, but the planting area spans a few hundred metres; over that
-extent, casting `geom::geography` for the rare distance query is exact enough and
-costs nothing. The `geography` type also supports a smaller set of functions,
-which would constrain the spatial queries listed in spec §5.
+**Por que `geometry` e não `geography`.** O tipo `geometry` com SRID 4326 é a
+escolha convencional em PostGIS e tem a superfície completa de funções, incluindo
+tudo de que o `ST_AsGeoJSON` e o Leaflet precisam. O `geography` entrega
+distância precisa em metros sem projeção, mas a área de plantio tem algumas
+centenas de metros; nessa extensão, converter com `geom::geography` na consulta
+rara de distância é exato o suficiente e não custa nada. O `geography` também
+suporta um conjunto menor de funções, o que limitaria as consultas espaciais
+listadas na especificação §5.
 
-**Why a separate centroid.** `centroid` is a `geometry(Point, 4326)` column
-generated as `ST_Centroid(geom)` (stored, `ST_Centroid` is `IMMUTABLE`). It gives
-the map a stable marker anchor and makes "nearest region to this point" a simple
-indexed query, without recomputing a centroid on every request.
+**Por que um centroide separado.** `centroid` é uma coluna
+`geometry(Point, 4326)` gerada como `ST_Centroid(geom)` (armazenada; o
+`ST_Centroid` é `IMMUTABLE`). Ela dá ao mapa uma âncora estável para o marcador e
+transforma "qual canteiro está mais perto deste ponto?" numa consulta indexada
+simples, sem recalcular centroide a cada requisição.
 
-### 4.2 `regions`
+### 4.2 Tabela `regions`
 
-| Column | Type | Notes |
+| Coluna | Tipo | Observações |
 |---|---|---|
 | `id` | `uuid` PK | `gen_random_uuid()` |
-| `slug` | `text` unique, not null | URL segment, human-readable, may be renamed |
-| `name` | `text` not null | Displayed to users |
-| `description` | `text` null | Optional short text |
-| `geom` | `geometry(Geometry, 4326)` not null | CHECK on `GeometryType(geom)`; GiST index |
-| `centroid` | `geometry(Point, 4326)` generated stored | GiST index |
-| `status` | `text` not null, default `'active'` | CHECK in (`active`, `draft`, `archived`) |
-| `qr_token` | `text` unique, not null | Opaque, URL-safe, stable for the region's lifetime |
+| `slug` | `text` único, not null | Trecho da URL, legível por humanos, pode ser renomeado |
+| `name` | `text` not null | Exibido ao usuário |
+| `description` | `text` nulo | Texto curto opcional |
+| `geom` | `geometry(Geometry, 4326)` not null | CHECK sobre `GeometryType(geom)`; índice GiST |
+| `centroid` | `geometry(Point, 4326)` gerada e armazenada | Índice GiST |
+| `status` | `text` not null, padrão `'active'` | CHECK em (`active`, `draft`, `archived`) |
+| `qr_token` | `text` único, not null | Opaco, seguro para URL, estável por toda a vida do canteiro |
 | `created_at` | `timestamptz` not null | |
 | `updated_at` | `timestamptz` not null | |
 
-### 4.3 `photos`
+### 4.3 Tabela `photos`
 
-| Column | Type | Notes |
+| Coluna | Tipo | Observações |
 |---|---|---|
 | `id` | `uuid` PK | |
-| `region_id` | `uuid` FK -> `regions.id` | `ON DELETE CASCADE`, indexed |
-| `storage_key` | `text` not null | Opaque key, meaningful only to the storage backend |
-| `original_filename` | `text` null | Kept for display; never used to build a path |
-| `content_type` | `text` not null | Determined by decoding the image, not by the client header |
+| `region_id` | `uuid` FK -> `regions.id` | `ON DELETE CASCADE`, indexada |
+| `storage_key` | `text` not null | Chave opaca, com significado apenas para o backend de storage |
+| `original_filename` | `text` nulo | Guardado para exibição; nunca usado para montar caminho |
+| `content_type` | `text` not null | Determinado decodificando a imagem, não pelo header do cliente |
 | `byte_size` | `integer` not null | |
-| `width`, `height` | `integer` not null | Lets the frontend reserve layout space and avoids reflow |
-| `description` | `text` null | |
-| `contributor_name` | `text` null | |
-| `captured_at` | `timestamptz` null | From EXIF `DateTimeOriginal` when present |
-| `uploaded_at` | `timestamptz` not null | Server clock |
-| `location` | `geometry(Point, 4326)` null | See [§4.4](#44-photo-location-decision) |
-| `location_source` | `text` null | `exif` today; `manual` / `browser` are future values |
-| `status` | `text` not null, default `'published'` | CHECK in (`published`, `hidden`) |
+| `width`, `height` | `integer` not null | Permite reservar espaço no layout e evitar salto de página |
+| `description` | `text` nulo | |
+| `contributor_name` | `text` nulo | |
+| `captured_at` | `timestamptz` nulo | Do EXIF `DateTimeOriginal`, quando existir |
+| `uploaded_at` | `timestamptz` not null | Relógio do servidor |
+| `location` | `geometry(Point, 4326)` nulo | Ver [§4.4](#44-decisão-de-localização-da-foto) |
+| `location_source` | `text` nulo | `exif` hoje; `manual` e `browser` são valores futuros |
+| `status` | `text` not null, padrão `'published'` | CHECK em (`published`, `hidden`) |
 
-Index on `(region_id, uploaded_at DESC)` — the timeline query is the hot path.
+Índice em `(region_id, uploaded_at DESC)` — a consulta da linha do tempo é o
+caminho quente.
 
-### 4.4 Photo location decision
+### 4.4 Decisão de localização da foto
 
-The spec suggests `latitude` / `longitude` columns. We store a single
-`geometry(Point, 4326)` instead, and expose `latitude` / `longitude` in the API
-response. Two loose float columns cannot answer "which region contains this
-photo?" without ad-hoc construction on every query; a real point can, through the
-same GiST index the regions use. The API contract is unaffected.
+A especificação sugere colunas `latitude` e `longitude`. Guardamos um único
+`geometry(Point, 4326)` no lugar, e expomos `latitude` e `longitude` na resposta
+da API. Duas colunas float soltas não conseguem responder "qual canteiro contém
+esta foto?" sem construção improvisada a cada consulta; um ponto de verdade
+consegue, pelo mesmo índice GiST que as regiões já usam. O contrato da API não
+muda.
 
-### 4.5 The `status` columns
+### 4.5 As colunas `status`
 
-Neither `regions.status` nor `photos.status` has a UI in the MVP. They exist
-because the product involves public uploads by and about children, and an
-organizer needs a way to take a photo down immediately — a one-line `UPDATE` on
-day one instead of an emergency migration. This is the only forward-looking
-column in the schema; every other future entity from spec §7 (User, Contributor,
-Planting event, Seed, Organization) is deliberately absent.
+Nem `regions.status` nem `photos.status` têm interface no MVP. Elas existem
+porque o produto envolve upload público feito por e sobre crianças, e o
+organizador precisa de um jeito de tirar uma foto do ar **imediatamente** — um
+`UPDATE` de uma linha desde o primeiro dia, em vez de uma migration de
+emergência. Essa é a única coluna do schema olhando para o futuro; todas as
+outras entidades futuras da especificação §7 (User, Contributor, Planting event,
+Seed, Organization) estão deliberadamente ausentes.
 
-### 4.6 Future entities
+### 4.6 Entidades futuras
 
-`User`, `Contributor`, `PlantingEvent`, `Seed`, and `Organization` are not
-modelled. The paths that would need them are already isolated: `contributor_name`
-is a plain nullable text column that a future `contributor_id` FK can supersede,
-and every write endpoint already goes through a service function where an
-authenticated identity can be threaded in.
+`User`, `Contributor`, `PlantingEvent`, `Seed` e `Organization` não são
+modeladas. Os caminhos que precisariam delas já estão isolados:
+`contributor_name` é uma coluna de texto nula que um futuro `contributor_id` pode
+suceder, e todo endpoint de escrita já passa por uma função de service onde uma
+identidade autenticada pode ser injetada.
 
 ---
 
-## 5. API design
+## 5. Desenho da API
 
-REST, JSON, documented automatically at `/docs` (OpenAPI).
+REST, JSON, documentada automaticamente em `/docs` (OpenAPI).
 
-`{region}` in the paths below accepts either the UUID or the slug. Resolution is
-handled once, in a shared FastAPI dependency.
+O `{region}` nos caminhos abaixo aceita tanto o UUID quanto o slug. A resolução
+acontece num único lugar, numa dependência compartilhada do FastAPI.
 
-| Method | Path | Auth | Response |
+| Método | Caminho | Acesso | Resposta |
 |---|---|---|---|
-| `GET` | `/health` | public | `{status, database}` |
-| `GET` | `/api/regions` | public | GeoJSON `FeatureCollection` |
-| `GET` | `/api/regions/{region}` | public | GeoJSON `Feature` |
-| `POST` | `/api/regions` | admin | GeoJSON `Feature` (201) |
-| `PATCH` | `/api/regions/{region}` | admin | GeoJSON `Feature` |
-| `POST` | `/api/regions/import` | admin | Import summary — Phase 6 |
-| `GET` | `/api/regions/{region}/photos` | public | Paginated photo list |
-| `POST` | `/api/regions/{region}/photos` | public | Created photo (201), `multipart/form-data` |
-| `GET` | `/api/regions/{region}/qr-code` | public | `image/png` or `image/svg+xml` |
-| `GET` | `/api/photos/{photo_id}/file` | public | Image bytes |
-| `GET` | `/api/qr/{qr_token}` | public | Resolves a token to its region |
+| `GET` | `/health` | público | `{status, database}` |
+| `GET` | `/api/regions` | público | `FeatureCollection` GeoJSON |
+| `GET` | `/api/regions/{region}` | público | `Feature` GeoJSON |
+| `POST` | `/api/regions` | admin | `Feature` GeoJSON (201) |
+| `PATCH` | `/api/regions/{region}` | admin | `Feature` GeoJSON |
+| `POST` | `/api/regions/import` | admin | Resumo da importação — Fase 6 |
+| `GET` | `/api/regions/{region}/photos` | público | Lista paginada de fotos |
+| `POST` | `/api/regions/{region}/photos` | público | Foto criada (201), `multipart/form-data` |
+| `GET` | `/api/regions/{region}/qr-code` | público | `image/png` ou `image/svg+xml` |
+| `GET` | `/api/photos/{photo_id}/file` | público | Bytes da imagem |
+| `GET` | `/api/qr/{qr_token}` | público | Resolve um token para o seu canteiro |
 
-### 5.1 GeoJSON as the region representation
+### 5.1 GeoJSON como representação do canteiro
 
-Region collections are returned as a GeoJSON `FeatureCollection`, which
-`react-leaflet`'s `<GeoJSON>` component consumes directly with no transformation
-step. Region attributes travel in `properties`:
+Coleções de canteiros são devolvidas como uma `FeatureCollection` GeoJSON, que o
+componente `<GeoJSON>` do `react-leaflet` consome direto, sem etapa de
+transformação. Os atributos do canteiro viajam em `properties`:
 
 ```json
 {
@@ -319,36 +331,37 @@ step. Region attributes travel in `properties`:
 }
 ```
 
-The geometry is produced by `ST_AsGeoJSON` in the database rather than serialized
-in Python, so the coordinate output has exactly one implementation.
+A geometria é produzida pelo `ST_AsGeoJSON` dentro do banco, e não serializada em
+Python, de modo que a saída de coordenadas tenha exatamente uma implementação.
 
-`photo_count` and `latest_photo_at` are computed with a `LEFT JOIN LATERAL`
-aggregate in the same query — the map needs them for every region and an N+1
-would be immediate.
+`photo_count` e `latest_photo_at` são calculados por um agregado com
+`LEFT JOIN LATERAL` na mesma consulta — o mapa precisa deles para todos os
+canteiros, e um N+1 apareceria de imediato.
 
-### 5.2 Photo file serving
+### 5.2 Entrega dos arquivos de foto
 
-Images are always served through `GET /api/photos/{photo_id}/file`, never through
-a direct storage path. The URL therefore stays valid when the storage backend
-changes: today the endpoint streams from disk, tomorrow it returns a 302 to a
-presigned S3 URL. Storage keys are never exposed in API responses.
+As imagens são sempre servidas por `GET /api/photos/{photo_id}/file`, nunca por
+um caminho direto de storage. Assim a URL continua válida quando o backend de
+armazenamento mudar: hoje o endpoint transmite do disco; amanhã ele devolve um
+302 para uma URL assinada do S3. Chaves de storage nunca aparecem em resposta da
+API.
 
-### 5.3 Errors
+### 5.3 Erros
 
-Domain exceptions (`RegionNotFound`, `InvalidImage`, `ImageTooLarge`) are raised
-by services and mapped to HTTP responses by exception handlers in `app/main.py`.
-Response body:
+Exceções de domínio (`RegionNotFound`, `InvalidImage`, `ImageTooLarge`) são
+levantadas pelos services e traduzidas em respostas HTTP por handlers em
+`app/main.py`. Corpo da resposta:
 
 ```json
 { "detail": "Não foi possível ler esta imagem.", "code": "invalid_image" }
 ```
 
-`detail` is user-facing Brazilian Portuguese, safe to display directly. `code` is
-a stable English identifier for the frontend to branch on.
+O `detail` é texto em português voltado ao usuário, seguro para exibir direto. O
+`code` é um identificador estável, em inglês, para o frontend decidir o que fazer.
 
 ---
 
-## 6. Photo storage
+## 6. Armazenamento de fotos
 
 ```python
 class StorageBackend(Protocol):
@@ -358,194 +371,204 @@ class StorageBackend(Protocol):
     def exists(self, key: str) -> bool: ...
 ```
 
-`LocalFilesystemStorage` is the only implementation in the MVP, writing under
-`backend/storage/` (gitignored). It is selected by `STORAGE_BACKEND=local` and
-injected as a FastAPI dependency, so tests substitute a temp-directory instance
-without touching service code.
+`LocalFilesystemStorage` é a única implementação do MVP, gravando em
+`backend/storage/` (fora do Git). Ela é selecionada por `STORAGE_BACKEND=local` e
+injetada como dependência do FastAPI, o que permite aos testes substituí-la por
+uma instância em diretório temporário sem tocar no código dos services.
 
-Keys follow `regions/{region_id}/{yyyy}/{uuid4}.{ext}` — collision-free, never
-derived from user input, and cheap to prefix-list per region.
+As chaves seguem `regions/{region_id}/{ano}/{uuid4}.{ext}` — livres de colisão,
+nunca derivadas de input do usuário, e baratas de listar por prefixo de canteiro.
 
-### 6.1 Upload validation
+### 6.1 Validação do upload
 
-Applied in order; the first failure rejects the request:
+Aplicada nesta ordem; a primeira falha rejeita a requisição:
 
-1. **Size.** `MAX_UPLOAD_BYTES` (default 10 MB), enforced while streaming, before
-   the file is fully buffered.
-2. **Real format.** The bytes are decoded with Pillow and the format read from the
-   decoded image. The client's `Content-Type` header and the filename extension
-   are both ignored for this decision. Allowed: JPEG, PNG, WebP.
-3. **Decompression bomb.** `Image.MAX_IMAGE_PIXELS` is set to a bounded value so a
-   small crafted file cannot exhaust memory.
-4. **Re-encode.** The image is re-encoded before being written. This normalizes
-   the format, applies EXIF orientation, and — critically — produces a stored file
-   that carries no metadata (see below).
+1. **Tamanho.** `MAX_UPLOAD_BYTES` (padrão 10 MB), aplicado durante o streaming,
+   antes de o arquivo ser inteiramente bufferizado.
+2. **Formato real.** Os bytes são decodificados com o Pillow e o formato é lido da
+   imagem decodificada. O `Content-Type` enviado pelo cliente e a extensão do
+   arquivo são ambos ignorados nessa decisão. Aceitos: JPEG, PNG e WebP.
+3. **Bomba de descompressão.** O `Image.MAX_IMAGE_PIXELS` recebe um limite, para
+   que um arquivo pequeno e mal-intencionado não esgote a memória.
+4. **Reescrita.** A imagem é reescrita antes de ser gravada. Isso normaliza o
+   formato, aplica a orientação do EXIF e — o ponto crítico — produz um arquivo
+   armazenado sem metadado nenhum (ver abaixo).
 
-### 6.2 EXIF and privacy
+### 6.2 EXIF e privacidade
 
-The stored image file always has its EXIF block stripped. Metadata is extracted
-into database columns first, and only what the contributor agreed to share is
-kept:
+O arquivo de imagem armazenado sempre tem o bloco EXIF removido. Os metadados são
+primeiro extraídos para colunas do banco, e só o que a pessoa concordou em
+compartilhar é mantido:
 
-- `DateTimeOriginal` -> `captured_at`. Always extracted; it is what makes the
-  timeline meaningful.
-- GPS tags -> `location`. **Only** persisted when the upload includes
+- `DateTimeOriginal` -> `captured_at`. Sempre extraído; é o que dá sentido à
+  linha do tempo.
+- Tags de GPS -> `location`. Gravado **apenas** quando o envio inclui
   `share_location=true`.
 
-`share_location` is an explicit opt-in checkbox in the upload form, **unchecked by
-default**, with plain-language text stating that the photo's location will be
-recorded. Anyone can contribute — including children — so silently harvesting the
-precise coordinates of where a minor was standing is not acceptable. When the box
-is left unchecked, GPS tags are read and discarded, never written to the database.
+O `share_location` é um checkbox de adesão explícita no formulário, **desmarcado
+por padrão**, com texto em linguagem simples dizendo que a localização da foto
+será registrada. Qualquer pessoa pode contribuir, inclusive crianças, então
+coletar em silêncio a coordenada precisa de onde um menor estava não é aceitável.
+Com a caixa desmarcada, as tags de GPS são lidas e descartadas, nunca gravadas.
 
-Because the stored file is stripped regardless, a photo that leaks by any other
-route still carries no hidden location.
+Como o arquivo armazenado é limpo de qualquer forma, uma foto que vaze por
+qualquer outro caminho também não carrega localização escondida.
 
-### 6.3 Deferred
+### 6.3 Adiado
 
-Thumbnail generation and responsive variants are not in the MVP. The hook is in
-place: `width`/`height` are recorded at upload time, and the file-serving endpoint
-is the single place a `?size=` parameter would later be handled.
+Geração de miniaturas e variantes responsivas ficam fora do MVP. O gancho já
+existe: `width` e `height` são registrados no momento do upload, e o endpoint que
+serve o arquivo é o único lugar onde um parâmetro `?size=` seria tratado depois.
 
 ---
 
-## 7. QR codes
+## 7. QR Codes
 
-The stable identifier is `regions.qr_token`: an opaque, URL-safe random string
-assigned once and never changed. The QR image encodes:
+O identificador estável é o `regions.qr_token`: uma string aleatória, opaca e
+segura para URL, atribuída uma vez e nunca alterada. A imagem do QR codifica:
 
 ```
 {PUBLIC_WEB_BASE_URL}/r/{qr_token}
 ```
 
-The token, not the slug, is encoded on purpose. A printed and physically installed
-QR code cannot be reprinted cheaply, so the URL it carries must survive a region
-being renamed, re-slugged, or re-keyed internally. `/r/{qr_token}` resolves
-through `GET /api/qr/{qr_token}` and redirects to `/regions/{slug}`.
+O token é codificado em vez do slug, de propósito. Um QR Code impresso e
+instalado fisicamente não é barato de reimprimir, então a URL que ele carrega
+precisa sobreviver ao canteiro ser renomeado, ter o slug trocado ou mudar de
+chave internamente. O `/r/{qr_token}` resolve através de
+`GET /api/qr/{qr_token}` e redireciona para `/regions/{slug}`.
 
-`GET /api/regions/{region}/qr-code` renders the image on demand (`?format=png|svg`,
-`?size=`). Nothing is cached to disk — regeneration is cheap and there is no
-stale-file problem. A print-oriented sheet with the region name below each code is
-Phase 6 work, produced from the same endpoint.
+`GET /api/regions/{region}/qr-code` gera a imagem sob demanda (`?format=png|svg`,
+`?size=`). Nada é gravado em disco — regerar é barato e não existe problema de
+arquivo desatualizado. A folha de impressão, com o nome do canteiro embaixo de
+cada código, é trabalho da Fase 6, produzido a partir do mesmo endpoint.
 
 ---
 
-## 8. Frontend architecture
+## 8. Arquitetura do frontend
 
-| Route | Page | Purpose |
+| Rota | Página | Papel |
 |---|---|---|
-| `/` | `HomePage` | What the project is, how to take part, call to action |
-| `/mapa` | `MapPage` | Full-height interactive map of all regions |
-| `/regions/:slug` | `RegionPage` | Region detail, timeline, upload |
-| `/r/:qrToken` | `QrRedirectPage` | Resolves a scanned token, redirects |
+| `/` | `HomePage` | O que é o projeto, como participar, chamada para ação |
+| `/mapa` | `MapPage` | Mapa interativo de todos os canteiros, em altura cheia |
+| `/regions/:slug` | `RegionPage` | Detalhe do canteiro, linha do tempo, envio de foto |
+| `/r/:qrToken` | `QrRedirectPage` | Resolve um token escaneado e redireciona |
 | `*` | `NotFoundPage` | |
 
-The region path stays `/regions/:slug` (English, as specified in spec §3) so
-printed QR codes and the spec agree. Other user-facing paths are Portuguese.
+O caminho do canteiro permanece `/regions/:slug` (em inglês, como definido na
+especificação §3), para que os QR Codes impressos e a especificação concordem
+entre si. As demais rotas visíveis ao usuário são em português.
 
-**Data flow.** `services/apiClient.ts` owns `fetch`, the base URL, and error
-normalization. `services/regions.ts` and `services/photos.ts` expose typed
-functions. Hooks wrap those in TanStack Query. Pages call hooks and render
-components; components receive plain props and never fetch.
+**Fluxo de dados.** O `services/apiClient.ts` é dono do `fetch`, da URL base e da
+normalização de erros. `services/regions.ts` e `services/photos.ts` expõem
+funções tipadas. Os hooks embrulham essas funções no TanStack Query. As páginas
+chamam hooks e renderizam componentes; os componentes recebem props simples e
+nunca buscam dados.
 
-**Map components.** `PlantingMap` owns the `MapContainer` and tile layer;
-`RegionLayer` renders the `FeatureCollection` and handles click and keyboard
-activation; `RegionPopup` renders the summary shown on selection. `PlantingMap`
-takes an explicit `height` from its parent's layout, never `100%` of an
-unsized ancestor.
+**Componentes de mapa.** O `PlantingMap` é dono do `MapContainer` e da camada de
+tiles; o `RegionLayer` desenha a `FeatureCollection` e trata clique e ativação por
+teclado; o `RegionPopup` mostra o resumo na seleção. O `PlantingMap` recebe a
+altura explicitamente do layout do pai, nunca `100%` de um ancestral sem altura.
 
-**Vocabulary.** The user-facing word for a region is **"canteiro"**. Users never
-see "region", "polygon", "GeoJSON", or "QR token". Per spec §14, all UI text is
-Brazilian Portuguese while identifiers, comments, and these documents are English.
-
----
-
-## 9. Security and moderation
-
-Implemented in the MVP:
-
-- Upload size limit, real-format validation, decompression-bomb guard (§6.1).
-- EXIF stripped from every stored file; GPS persisted only on explicit opt-in (§6.2).
-- Admin write endpoints (`POST`/`PATCH /api/regions`) require an
-  `X-Admin-Token` header matching `ADMIN_API_TOKEN`, compared with
-  `secrets.compare_digest`. The backend refuses to start with a default or empty
-  token when `ENVIRONMENT=production`.
-- CORS restricted to `CORS_ALLOWED_ORIGINS`, not `*`.
-- Storage keys and filesystem paths never appear in responses.
-- `photos.status` lets an organizer hide content immediately.
-
-Documented and deliberately deferred:
-
-- **Rate limiting.** No limit on photo uploads in the MVP; the endpoint is public
-  and this is the clearest abuse vector. Phase 7 evaluates a per-IP limit.
-- **Image moderation.** No automated or human moderation queue. `photos.status`
-  is the manual escape hatch.
-- **Consent.** No recorded consent flow for images of identifiable people. If the
-  project photographs children rather than only plants, this needs a real policy
-  decision before any public launch — it is a legal question (LGPD), not a
-  technical one.
-- **Authentication.** No user accounts. The admin token is a stopgap, not an
-  authentication system; the write paths are already isolated behind one
-  dependency, so replacing it is a contained change.
-- **Contributor name.** Free text, unvalidated, publicly displayed. The UI asks
-  for a first name only.
+**Vocabulário.** A palavra usada na interface para uma região é **"canteiro"**. O
+usuário nunca vê "region", "polígono", "GeoJSON" ou "token". Conforme a
+especificação §14, todo texto de interface é em português do Brasil, enquanto
+identificadores e comentários no código permanecem em inglês.
 
 ---
 
-## 10. Testing strategy
+## 9. Segurança e moderação
 
-**Backend** (`pytest`): tests run against a real PostGIS database — `postgis`
-behaviour is the thing most worth testing, so it is never mocked. The
-`community_roots_test` database is created by the Compose init script; each test
-runs inside a transaction that is rolled back afterwards.
+Implementado no MVP:
 
-Coverage: health endpoint; region list/detail/create/patch including GeoJSON
-output shape; slug and UUID resolution; admin token enforcement; photo upload
-happy path; each rejection path (oversized, wrong format, corrupt bytes); EXIF
-stripping verified by re-reading the stored file; GPS persisted only with opt-in;
-QR endpoint content type and encoded URL.
+- Limite de tamanho no upload, validação de formato real e proteção contra bomba
+  de descompressão (§6.1).
+- EXIF removido de todo arquivo armazenado; GPS gravado apenas mediante adesão
+  explícita (§6.2).
+- Endpoints administrativos de escrita (`POST` e `PATCH /api/regions`) exigem um
+  header `X-Admin-Token` que bata com `ADMIN_API_TOKEN`, comparado com
+  `secrets.compare_digest`. O backend se recusa a subir com token padrão ou vazio
+  quando `ENVIRONMENT=production`.
+- CORS restrito a `CORS_ALLOWED_ORIGINS`, nunca `*`.
+- Chaves de storage e caminhos de arquivo nunca aparecem nas respostas.
+- `photos.status` permite ao organizador esconder conteúdo imediatamente.
 
-**Frontend** (Vitest + Testing Library + MSW): upload form validation and states;
-`RegionPage` loading/error/empty/populated; `PhotoTimeline` ordering. Map tests
-stay shallow — `react-leaflet` in jsdom is high-friction for low value, so
-`RegionLayer` is tested for the props and handlers it passes down, with
-`react-leaflet` mocked.
+Documentado e adiado de propósito:
 
-Manual test scripts live in the README, one per user flow from spec §15.
+- **Rate limiting.** Nenhum limite no envio de fotos no MVP; o endpoint é público
+  e este é o vetor de abuso mais claro. A Fase 7 avalia um limite por IP.
+- **Moderação de imagem.** Não há fila de moderação, automática ou humana. O
+  `photos.status` é a válvula de escape manual.
+- **Consentimento.** Não há fluxo de consentimento registrado para imagens de
+  pessoas identificáveis. Se o projeto fotografar crianças, e não apenas plantas,
+  isso exige uma decisão de política antes de qualquer lançamento público — é uma
+  questão jurídica (LGPD), não técnica.
+- **Autenticação.** Não há contas de usuário. O token administrativo é um
+  paliativo, não um sistema de autenticação; os caminhos de escrita já estão
+  isolados atrás de uma única dependência, então substituí-lo é uma mudança
+  contida.
+- **Nome do contribuinte.** Texto livre, sem validação, exibido publicamente. A
+  interface pede apenas o primeiro nome.
 
 ---
 
-## 11. Configuration
+## 10. Estratégia de testes
 
-No secrets in the repository. Every service reads a `.env` created from its
+**Backend** (`pytest`): os testes rodam contra um PostGIS real — o comportamento
+do PostGIS é justamente o que mais vale testar, então ele nunca é simulado. O
+banco `community_roots_test` é criado pelo script de inicialização do Compose;
+cada teste roda dentro de uma transação que é revertida ao final.
+
+Cobertura: endpoint de saúde; listagem, detalhe, criação e atualização de
+canteiro, incluindo o formato da saída GeoJSON; resolução por slug e por UUID;
+exigência do token administrativo; caminho feliz do envio de foto; cada caminho de
+rejeição (arquivo grande demais, formato errado, bytes corrompidos); remoção de
+EXIF verificada relendo o arquivo gravado; GPS gravado somente com adesão;
+endpoint de QR quanto ao content type e à URL codificada.
+
+**Frontend** (Vitest + Testing Library + MSW): validação e estados do formulário
+de envio; `RegionPage` nos estados de carregamento, erro, vazio e preenchido;
+ordenação da `PhotoTimeline`. Os testes de mapa ficam rasos — `react-leaflet` no
+jsdom dá muito atrito para pouco retorno, então o `RegionLayer` é testado pelas
+props e handlers que repassa, com o `react-leaflet` simulado.
+
+Os roteiros de teste manual ficam no README, um por fluxo de usuário da
+especificação §15.
+
+---
+
+## 11. Configuração
+
+Nenhum segredo no repositório. Cada serviço lê um `.env` criado a partir do seu
 `.env.example`.
 
-| File | Consumed by |
+| Arquivo | Consumido por |
 |---|---|
-| `.env` (root) | `docker-compose.yml` |
+| `.env` (raiz) | `docker-compose.yml` |
 | `backend/.env` | FastAPI (`pydantic-settings`) |
-| `frontend/.env` | Vite (only `VITE_`-prefixed variables reach the browser) |
+| `frontend/.env` | Vite (só variáveis com prefixo `VITE_` chegam ao navegador) |
 
-`backend/app/core/config.py` fails fast at startup on a missing or invalid
-required variable, with a message naming the variable.
+O `backend/app/core/config.py` falha logo na inicialização quando uma variável
+obrigatória está ausente ou inválida, com uma mensagem que diz qual é a variável.
 
 ---
 
-## 12. Evolution paths
+## 12. Caminhos de evolução
 
-The design deliberately leaves these doors open:
+O desenho deixa estas portas abertas de propósito:
 
-- **Real polygons arrive.** `POST /api/regions/import` accepts a GeoJSON
-  `FeatureCollection` and matches features to existing regions by slug,
-  `UPDATE`-ing `geom`. QR codes stay valid because they encode `qr_token`.
-  Shapefiles are converted with `ogr2ogr` before import rather than parsed in the
-  application.
-- **Object storage.** Implement `S3Storage` against the same protocol, flip
-  `STORAGE_BACKEND`. The file endpoint switches from streaming to a redirect.
-- **Authentication.** Replace the admin token dependency; add `contributor_id` to
-  `photos` alongside the existing `contributor_name`.
-- **Admin interface.** Services already contain the logic; an admin UI is new
-  routes plus a frontend area, with no changes below the route layer.
-- **Spatial features.** "Which region contains this point?", "nearest region",
-  and boundary intersection are all direct `ST_*` queries against the existing
-  GiST-indexed columns.
+- **Chegada dos polígonos reais.** O `POST /api/regions/import` aceita uma
+  `FeatureCollection` GeoJSON e casa as features com os canteiros existentes pelo
+  slug, atualizando o `geom`. Os QR Codes continuam válidos porque codificam o
+  `qr_token`. Shapefiles são convertidos com `ogr2ogr` antes da importação, em vez
+  de interpretados dentro da aplicação.
+- **Armazenamento em objeto.** Implementar `S3Storage` contra o mesmo protocolo e
+  trocar o `STORAGE_BACKEND`. O endpoint de arquivo passa de transmissão para
+  redirecionamento.
+- **Autenticação.** Substituir a dependência do token administrativo e adicionar
+  `contributor_id` em `photos`, ao lado do `contributor_name` já existente.
+- **Interface administrativa.** Os services já contêm a lógica; uma interface
+  admin são rotas novas e uma área no frontend, sem mudança abaixo da camada de
+  rotas.
+- **Recursos espaciais.** "Qual canteiro contém este ponto?", "canteiro mais
+  próximo" e interseção com um limite geográfico são consultas `ST_*` diretas
+  contra as colunas já indexadas por GiST.

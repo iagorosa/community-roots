@@ -1,50 +1,54 @@
 # Community Roots
 
-A community project for environmental education. Children, teenagers, and
-neighbours plant seeds in a shared area of the city and follow how those plants
-grow over time.
+Um projeto comunitário de educação ambiental. Crianças, adolescentes e vizinhos
+plantam sementes numa área compartilhada da cidade e acompanham como essas plantas
+crescem ao longo do tempo.
 
-The application is the digital twin of that physical area: an interactive map of
-the planting beds, a QR code on each bed in the field, and a photo timeline
-showing each bed's development.
+A aplicação é o gêmeo digital dessa área física: um mapa interativo dos canteiros,
+um QR Code em cada canteiro no local, e uma linha do tempo de fotos mostrando o
+desenvolvimento de cada um.
 
 ```
-Physical marker  ->  QR code  ->  digital region  ->  photo timeline
+Placa no canteiro  ->  QR Code  ->  canteiro digital  ->  linha do tempo de fotos
 ```
 
-Reference area: **Matias Barbosa, Minas Gerais, Brazil**.
+Área de referência: **Matias Barbosa, Minas Gerais**.
 
 ---
 
-## Project status
+## Situação do projeto
 
-Planning is complete. Implementation has not started.
+O planejamento está concluído. A implementação ainda não começou.
 
-| Phase | Description | Status |
+| Fase | Descrição | Situação |
 |---|---|---|
-| 0 | Planning and documentation | done |
-| 1 | Project foundation | not started |
-| 2 | Geographic regions | not started |
-| 3 | Interactive map | not started |
-| 4 | Region pages | not started |
-| 5 | Photo uploads | not started |
-| 6 | QR codes | not started |
-| 7 | Polish | not started |
+| 0 | Planejamento e documentação | concluída |
+| 1 | Fundação do projeto | não iniciada |
+| 2 | Canteiros | não iniciada |
+| 3 | Mapa interativo | não iniciada |
+| 4 | Páginas de canteiro | não iniciada |
+| 5 | Envio de fotos | não iniciada |
+| 6 | QR Codes | não iniciada |
+| 7 | Polimento | não iniciada |
 
-The setup instructions below describe the state at the end of Phase 1. They do
-not work yet.
+As instruções de instalação abaixo descrevem o estado ao final da Fase 1. **Elas
+ainda não funcionam.**
 
-Read next:
+O backlog fica nas [issues](https://github.com/iagorosa/community-roots/issues),
+organizadas por [milestone](https://github.com/iagorosa/community-roots/milestones)
+— um milestone por fase.
 
-- [docs/architecture.md](docs/architecture.md) — architecture and the reasoning
-  behind each decision.
-- [docs/implementation-plan.md](docs/implementation-plan.md) — phases,
-  deliverables, and validation criteria.
-- [PROJECT_BOOTSTRAP.md](PROJECT_BOOTSTRAP.md) — the product specification.
+Para entender o projeto por dentro:
+
+- [docs/architecture.md](docs/architecture.md) — a arquitetura e o porquê de cada
+  decisão.
+- [docs/implementation-plan.md](docs/implementation-plan.md) — as fases, os
+  entregáveis e os critérios de validação.
+- [PROJECT_BOOTSTRAP.md](PROJECT_BOOTSTRAP.md) — a especificação do produto.
 
 ---
 
-## Stack
+## Tecnologias
 
 **Frontend** — React 19, Vite 7, TypeScript, Tailwind CSS v4, React Leaflet 5,
 React Router 7, TanStack Query 5.
@@ -52,45 +56,46 @@ React Router 7, TanStack Query 5.
 **Backend** — Python 3.11, FastAPI, SQLAlchemy 2.0, GeoAlchemy2, Pydantic v2,
 Alembic.
 
-**Database** — PostgreSQL 16 with PostGIS 3.4, in Docker.
+**Banco de dados** — PostgreSQL 16 com PostGIS 3.4, em Docker.
 
-Map tiles come from OpenStreetMap. No paid service and no API key is required to
-run this project.
+Os tiles do mapa vêm do OpenStreetMap. Nenhum serviço pago e nenhuma API key são
+necessários para rodar o projeto.
 
 ---
 
-## Requirements
+## Requisitos
 
-| Tool | Version | Notes |
+| Ferramenta | Versão | Observação |
 |---|---|---|
-| Docker + Compose | any recent | Runs the database only |
-| Python | 3.11.10 | Pinned in `backend/.python-version` |
-| Node.js | 22.22.1 | Pinned in `frontend/.nvmrc` |
+| Docker + Compose | qualquer recente | Roda apenas o banco de dados |
+| Python | 3.11.10 | Fixada em `backend/.python-version` |
+| Node.js | 22.22.1 | Fixada em `frontend/.nvmrc` |
 
-`pyenv` and `nvm` will pick up those pinned versions automatically.
-No global npm package is needed.
+O `pyenv` e o `nvm` reconhecem essas versões automaticamente.
+Nenhum pacote npm global é necessário.
 
 ---
 
-## Setup
+## Instalação
 
-### 1. Database
+### 1. Banco de dados
 
 ```bash
-cp .env.example .env          # edit POSTGRES_PASSWORD
+cp .env.example .env          # ajuste POSTGRES_PASSWORD
 docker compose up -d
-docker compose ps             # wait for "healthy"
+docker compose ps             # aguarde o status "healthy"
 ```
 
-The container exposes the port set in `POSTGRES_PORT` (default `5432`). Change it
-if that port is taken. On first start, the init script enables PostGIS and creates
-the `community_roots_test` database used by the test suite.
+O container expõe a porta definida em `POSTGRES_PORT` (padrão `5432`). Troque se
+essa porta já estiver ocupada na sua máquina. No primeiro start, o script de
+inicialização habilita o PostGIS e cria o banco `community_roots_test`, usado pela
+suíte de testes.
 
 ### 2. Backend
 
 ```bash
 cd backend
-cp .env.example .env           # DATABASE_URL must match the root .env
+cp .env.example .env           # a DATABASE_URL precisa bater com o .env da raiz
 pyenv install --skip-existing 3.11.10
 
 uv venv && source .venv/bin/activate
@@ -100,7 +105,7 @@ alembic upgrade head
 uvicorn app.main:app --reload
 ```
 
-Without `uv`, the equivalent is:
+Sem o `uv`, o equivalente é:
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
@@ -108,45 +113,45 @@ pip install -e ".[dev]"
 ```
 
 - API: <http://localhost:8000>
-- Interactive docs: <http://localhost:8000/docs>
-- Health check: <http://localhost:8000/health>
+- Documentação interativa: <http://localhost:8000/docs>
+- Verificação de saúde: <http://localhost:8000/health>
 
 ### 3. Frontend
 
 ```bash
 cd frontend
 cp .env.example .env
-nvm use                        # reads .nvmrc
+nvm use                        # lê o .nvmrc
 npm install
 npm run dev
 ```
 
-Open <http://localhost:5173>. In development, `/api` is proxied to the backend,
-so there is a single origin and no CORS to configure.
+Abra <http://localhost:5173>. Em desenvolvimento, `/api` é redirecionado para o
+backend pelo proxy do Vite, então há uma origem só e nenhum CORS para configurar.
 
-### 4. Development data
+### 4. Dados de desenvolvimento
 
 ```bash
 cd backend
 python scripts/seed.py
 ```
 
-This creates 10 fictional planting beds arranged around `SEED_CENTER_LAT` /
-`SEED_CENTER_LON`. **The geometry is a placeholder** — real polygons will be
-imported once the geographer delivers them. Running the script again changes
-nothing; it matches on slug.
+Isso cria 10 canteiros fictícios distribuídos ao redor de `SEED_CENTER_LAT` e
+`SEED_CENTER_LON`. **A geometria é um placeholder** — os polígonos reais serão
+importados quando o geógrafo entregar o levantamento. Rodar o script de novo não
+muda nada: ele reconhece os canteiros pelo slug.
 
 ---
 
-## Common commands
+## Comandos do dia a dia
 
 ```bash
 # Backend
-pytest                                   # tests
-ruff check . && ruff format .            # lint and format
-alembic revision --autogenerate -m "..." # new migration (always review it)
-alembic upgrade head                     # apply
-python scripts/seed.py                   # development data
+pytest                                   # testes
+ruff check . && ruff format .            # lint e formatação
+alembic revision --autogenerate -m "..." # nova migration (sempre revise antes)
+alembic upgrade head                     # aplica as migrations
+python scripts/seed.py                   # dados de desenvolvimento
 
 # Frontend
 npm run dev
@@ -154,46 +159,59 @@ npm run build
 npm run test
 npm run lint
 
-# Database
+# Banco de dados
 docker compose up -d
 docker compose logs -f db
-docker compose down                      # stop, keep data
-docker compose down -v                   # stop and erase data
+docker compose down                      # para, preservando os dados
+docker compose down -v                   # para e apaga os dados
 ```
 
 ---
 
-## Manual testing
+## Teste manual
 
-**Flow A — explore the map.** Open `/`, follow the call to action, tap a bed,
-confirm the region page opens with its timeline.
+**Fluxo A — explorar o mapa.** Abra `/`, siga a chamada para ação, toque num
+canteiro e confirme que a página dele abre com a linha do tempo.
 
-**Flow B — contribute via QR code.** Fetch a bed's QR code from
-`/api/regions/{slug}/qr-code`, scan it with a phone camera, confirm it opens the
-right bed, send a photo, confirm it appears in the timeline.
+**Fluxo B — contribuir pelo QR Code.** Obtenha o QR Code de um canteiro em
+`/api/regions/{slug}/qr-code`, escaneie com a câmera do celular, confirme que abre
+o canteiro certo, envie uma foto e confirme que ela aparece na linha do tempo.
 
-**Flow C — organizer.** Create a bed through the API with the `X-Admin-Token`
-header, fetch its QR code, confirm the printable sheet renders.
+**Fluxo C — organizador.** Crie um canteiro pela API usando o header
+`X-Admin-Token`, obtenha o QR Code dele e confirme que a folha de impressão sai
+utilizável.
 
-Test on a 360 px-wide viewport as well. Mobile is the primary experience for
-anyone standing in the planting area.
+Teste também numa viewport de 360 px de largura. O celular é a experiência
+principal para quem está de pé na área de plantio.
 
 ---
 
-## Project conventions
+## Convenções do projeto
 
-- Code, identifiers, comments, and documentation in **English**.
-- All user-facing interface text in **Brazilian Portuguese**, avoiding technical
-  vocabulary. A region is a *canteiro*; users never see the words "polygon",
-  "GeoJSON", or "token".
-- Commit messages in Portuguese, following Conventional Commits.
-- Secrets stay in `.env` files, which are never committed.
-- Uploaded photos are stored under `backend/storage/` and are never committed.
+- Código, identificadores, comentários, nomes de arquivo e nomes de branch em
+  **inglês**.
+- Documentação e todo texto de interface em **português do Brasil**, evitando
+  vocabulário técnico. Uma região é um *canteiro*; o usuário nunca vê "polígono",
+  "GeoJSON" ou "token".
+- Mensagens de commit em português, seguindo Conventional Commits.
+- Segredos ficam em arquivos `.env`, que nunca são versionados.
+- Fotos enviadas ficam em `backend/storage/` e nunca são versionadas.
 
-## Privacy
+## Privacidade
 
-Photos may be taken by and of children. Every stored image has its metadata
-stripped before it is written to disk. GPS coordinates are recorded only when the
-contributor explicitly opts in through the upload form. See
-[docs/architecture.md §6.2](docs/architecture.md) and §9 for the full policy and
-for what is deliberately deferred.
+As fotos podem ser tiradas por crianças e mostrar crianças. Toda imagem armazenada
+tem os metadados removidos antes de ser gravada em disco. As coordenadas de GPS só
+são registradas quando a pessoa marca explicitamente essa opção no formulário de
+envio. A política completa, e o que ficou deliberadamente adiado, estão em
+[docs/architecture.md](docs/architecture.md), seções 6.2 e 9.
+
+## Como contribuir
+
+O backlog está nas [issues](https://github.com/iagorosa/community-roots/issues),
+agrupadas por fase. Antes de abrir uma pull request, vale ler
+[docs/architecture.md](docs/architecture.md) — a maioria das decisões estruturais
+já tem um porquê registrado lá.
+
+## Licença
+
+A definir.

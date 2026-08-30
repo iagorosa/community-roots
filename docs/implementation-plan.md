@@ -1,268 +1,294 @@
-# Community Roots — Implementation Plan
+# Community Roots — Plano de Implementação
 
-Companion to [architecture.md](./architecture.md), which holds the reasoning
-behind every decision referenced here. Scope comes from
+Documento companheiro de [architecture.md](./architecture.md), onde está o
+raciocínio por trás de cada decisão citada aqui. O escopo vem de
 [../PROJECT_BOOTSTRAP.md](../PROJECT_BOOTSTRAP.md).
 
-Each phase ends with a validation step. A phase is not finished until its
-validation passes and the result is reported honestly.
+Cada fase termina com uma etapa de validação. Uma fase não está concluída
+enquanto a validação não passar e o resultado não for relatado honestamente.
 
-| Phase | Outcome | Status |
+O backlog está no GitHub: cada fase é um
+[milestone](https://github.com/iagorosa/community-roots/milestones), com as
+issues do trabalho correspondente.
+
+| Fase | Resultado | Situação |
 |---|---|---|
-| 0 | Planning, documentation, decisions | done |
-| 1 | Project foundation: skeleton, database, health endpoint | not started |
-| 2 | Regions: model, migration, seed, GeoJSON API | not started |
-| 3 | Interactive map | not started |
-| 4 | Region pages and photo timeline (read-only) | not started |
-| 5 | Photo uploads | not started |
-| 6 | QR codes | not started |
-| 7 | Polish, accessibility, security review | not started |
+| 0 | Planejamento, documentação e decisões | concluída |
+| 1 | Fundação do projeto: esqueleto, banco, endpoint de saúde | não iniciada |
+| 2 | Canteiros: model, migration, seed, API em GeoJSON | não iniciada |
+| 3 | Mapa interativo | não iniciada |
+| 4 | Páginas de canteiro e linha do tempo (só leitura) | não iniciada |
+| 5 | Envio de fotos | não iniciada |
+| 6 | QR Codes | não iniciada |
+| 7 | Polimento, acessibilidade e revisão de segurança | não iniciada |
 
 ---
 
-## Confirmed decisions
+## Decisões confirmadas
 
-Resolved with the project owner during planning:
+Resolvidas com o responsável pelo projeto durante o planejamento:
 
-1. **Reference location.** The planting area is in **Matias Barbosa, Minas
-   Gerais** (approximately `-21.883859, -43.312459`). The centre is configured
-   through `SEED_CENTER_LAT` / `SEED_CENTER_LON`, never hardcoded.
-2. **Seed data.** 10 fictional regions, generated as a grid around the configured
-   centre. These are development placeholders, not surveyed geography, and every
-   record is labelled as such.
-3. **Region geometry.** `geometry(Geometry, 4326)` with a check constraint on the
-   geometry type, plus a generated `centroid` — see architecture §4.1.
-4. **EXIF.** Capture date and GPS are both extracted; GPS is persisted only when
-   the contributor opts in via an explicit unchecked-by-default checkbox. The
-   stored image file is always stripped of metadata — see architecture §6.2.
-5. **Frontend language.** TypeScript.
+1. **Localização de referência.** A área de plantio fica em **Matias Barbosa,
+   Minas Gerais** (aproximadamente `-21.883859, -43.312459`). O centro é
+   configurado por `SEED_CENTER_LAT` e `SEED_CENTER_LON`, nunca fixado em código.
+2. **Dados de desenvolvimento.** 10 canteiros fictícios, gerados em grade ao
+   redor do centro configurado. São placeholders de desenvolvimento, não
+   levantamento geográfico, e cada registro é identificado como tal.
+3. **Geometria do canteiro.** `geometry(Geometry, 4326)` com constraint CHECK
+   sobre o tipo de geometria, mais um `centroid` gerado — ver arquitetura §4.1.
+4. **EXIF.** Data de captura e GPS são ambos extraídos; o GPS só é gravado quando
+   a pessoa adere explicitamente, por um checkbox desmarcado por padrão. O arquivo
+   armazenado sempre tem os metadados removidos — ver arquitetura §6.2.
+5. **Linguagem do frontend.** TypeScript.
+6. **Idioma.** Documentação e interface em português; código, identificadores,
+   nomes de arquivo e nomes de branch em inglês; mensagens de commit em português.
 
-Decisions taken by the implementer, open to reversal: local venv rather than a
-containerized backend; admin write endpoints behind a shared token;
-`postgis/postgis:16-3.4`; a configurable database port to avoid the other
-Postgres instances already running on this machine.
+Decisões tomadas pelo implementador, abertas a reversão: venv local em vez de
+backend em container; endpoints administrativos atrás de um token compartilhado;
+imagem `postgis/postgis:16-3.4`; porta do banco configurável, para não conflitar
+com as outras instâncias de Postgres já rodando nesta máquina.
 
 ---
 
-## Phase 1 — Project foundation
+## Fase 1 — Fundação do projeto
 
-**Goal:** `docker compose up -d`, one backend command, one frontend command, and
-both respond. No domain logic yet.
+**Objetivo:** `docker compose up -d`, um comando no backend, um no frontend, e os
+três respondem. Nenhuma lógica de domínio ainda.
 
-### Deliverables
+### Entregáveis
 
-**Infrastructure**
-- `docker-compose.yml` with a single `db` service on `postgis/postgis:16-3.4`,
-  a named volume, a `pg_isready` healthcheck, and the port from `POSTGRES_PORT`.
-- `infrastructure/postgres/init/01-init.sql`: `CREATE EXTENSION postgis`, plus
-  creation of the `community_roots_test` database.
-- Root `.env.example`.
+**Infraestrutura**
+- `docker-compose.yml` com um único serviço `db` na imagem
+  `postgis/postgis:16-3.4`, volume nomeado, healthcheck com `pg_isready` e a
+  porta vinda de `POSTGRES_PORT`.
+- `infrastructure/postgres/init/01-init.sql`: `CREATE EXTENSION postgis` e
+  criação do banco `community_roots_test`.
+- `.env.example` na raiz.
 
 **Backend**
-- `pyproject.toml` pinning fastapi, uvicorn, sqlalchemy, geoalchemy2, psycopg,
-  alembic, pydantic-settings, pillow, qrcode, python-multipart; dev extras
-  pytest, httpx, ruff.
-- `.python-version` (3.11.10) and `backend/.env.example`.
-- `app/core/config.py` — `Settings`, validated at import, failing with a message
-  that names the missing variable.
-- `app/db/session.py` — engine, session factory, `get_db` dependency.
-- `app/db/base.py` — `DeclarativeBase` with shared `id` / timestamp mixins.
-- `app/main.py` — app factory, CORS from settings, exception handlers, router
-  mounting.
-- `app/api/routes/health.py` — `GET /health` returning `{"status": "ok",
-  "database": "ok"}`, where `database` reflects an actual `SELECT 1`.
-- Alembic initialized against the app's metadata, with an empty baseline revision.
-- `tests/conftest.py` and `tests/test_health.py`.
+- `pyproject.toml` pinando fastapi, uvicorn, sqlalchemy, geoalchemy2, psycopg,
+  alembic, pydantic-settings, pillow, qrcode e python-multipart; extras de
+  desenvolvimento: pytest, httpx e ruff.
+- `.python-version` (3.11.10) e `backend/.env.example`.
+- `app/core/config.py` — `Settings`, validado na importação, falhando com uma
+  mensagem que diz qual variável está faltando.
+- `app/db/session.py` — engine, session factory e a dependência `get_db`.
+- `app/db/base.py` — `DeclarativeBase` com mixins compartilhados de `id` e de
+  timestamps.
+- `app/main.py` — app factory, CORS a partir das settings, handlers de exceção e
+  montagem dos routers.
+- `app/api/routes/health.py` — `GET /health` devolvendo
+  `{"status": "ok", "database": "ok"}`, onde `database` reflete um `SELECT 1` de
+  verdade.
+- Alembic inicializado contra o metadata da aplicação, com uma revisão baseline
+  vazia.
+- `tests/conftest.py` e `tests/test_health.py`.
 
 **Frontend**
-- `npm create vite@latest` (react-ts), Node pinned by `.nvmrc` (22.22.1).
-- Tailwind v4 through `@tailwindcss/vite` — no `init` command, no
-  `tailwind.config.js`, no `postcss.config.js`.
-- `react-router`, TanStack Query, `leaflet` + `react-leaflet` installed but not
-  yet wired into pages.
-- Vite dev proxy from `/api` to the backend, so the browser sees one origin in
-  development.
-- `src/services/apiClient.ts` and a placeholder `HomePage` that renders the
-  backend's health response, proving the whole path end to end.
-- Vitest configured with one passing smoke test.
+- `npm create vite@latest` (react-ts), com o Node fixado pelo `.nvmrc` (22.22.1).
+- Tailwind v4 pelo plugin `@tailwindcss/vite` — sem comando `init`, sem
+  `tailwind.config.js`, sem `postcss.config.js`.
+- `react-router`, TanStack Query, `leaflet` e `react-leaflet` instalados, mas
+  ainda não ligados a nenhuma página.
+- Proxy de desenvolvimento do Vite de `/api` para o backend, para que o navegador
+  enxergue uma origem só.
+- `src/services/apiClient.ts` e uma `HomePage` provisória que renderiza a resposta
+  do endpoint de saúde, provando o caminho inteiro.
+- Vitest configurado, com um teste de fumaça passando.
 - `frontend/.env.example`.
 
-**Documentation**
-- README with real setup steps, verified by following them from a clean state.
+**Documentação**
+- README com passos de setup reais, verificados executando-os a partir de um
+  estado limpo.
 
-### Validation
-- `docker compose up -d` reaches a healthy container; `SELECT postgis_version()`
-  succeeds.
-- `alembic upgrade head` runs clean; `alembic downgrade base` then `upgrade head`
-  also runs clean.
-- `GET /health` returns `database: "ok"`; stopping the database changes that
-  field rather than crashing the process.
-- `pytest` passes.
-- `npm run dev` serves a page that displays the health response fetched through
-  the proxy.
-- `npm run build` and `npm run test` pass.
+### Validação
+- `docker compose up -d` chega a um container saudável; `SELECT postgis_version()`
+  responde.
+- `alembic upgrade head` roda limpo; `alembic downgrade base` seguido de
+  `upgrade head` também.
+- `GET /health` devolve `database: "ok"`; parar o banco muda esse campo em vez de
+  derrubar o processo.
+- `pytest` passa.
+- `npm run dev` serve uma página que mostra a resposta de saúde obtida pelo proxy.
+- `npm run build` e `npm run test` passam.
 
 ---
 
-## Phase 2 — Geographic regions
+## Fase 2 — Canteiros
 
-**Goal:** regions exist in PostGIS and are readable as GeoJSON.
+**Objetivo:** os canteiros existem no PostGIS e são legíveis como GeoJSON.
 
-### Deliverables
-- `app/models/region.py` per architecture §4.2, using GeoAlchemy2 `Geometry`.
-- Alembic migration: extension guard, table, check constraints, generated
-  centroid, GiST indexes, unique constraints. Hand-reviewed, not raw autogenerate.
-- `app/schemas/geojson.py` — `Feature` / `FeatureCollection` models, so OpenAPI
-  documents the real response shape instead of a bare `dict`.
-- `app/services/region_service.py` — list, resolve by slug or UUID, create,
-  update. Slug generation and `qr_token` generation live here.
-- `GET /api/regions`, `GET /api/regions/{region}`, `POST /api/regions`,
+### Entregáveis
+- `app/models/region.py` conforme arquitetura §4.2, usando o `Geometry` do
+  GeoAlchemy2.
+- Migration do Alembic: garantia da extensão, tabela, constraints CHECK, centroide
+  gerado, índices GiST e constraints de unicidade. Revisada à mão, não autogenerate
+  cru.
+- `app/schemas/geojson.py` — modelos `Feature` e `FeatureCollection`, para que o
+  OpenAPI documente a resposta real em vez de um `dict` genérico.
+- `app/services/region_service.py` — listar, resolver por slug ou UUID, criar e
+  atualizar. A geração de slug e de `qr_token` vive aqui.
+- `GET /api/regions`, `GET /api/regions/{region}`, `POST /api/regions` e
   `PATCH /api/regions/{region}`.
-- `app/core/security.py` — admin token dependency on the write routes.
-- `scripts/seed.py` — idempotent (upsert by slug), generating 10 regions on a
-  5 × 2 grid of roughly 50 m squares around the configured centre, with
-  Portuguese names taken from Brazilian native trees. Reads the centre from
-  settings; running it twice changes nothing.
-- Tests: GeoJSON shape, geometry round-trip through the database, slug/UUID
-  resolution, 404 handling, admin token enforcement, seed idempotency.
+- `app/core/security.py` — dependência do token administrativo nas rotas de
+  escrita.
+- `scripts/seed.py` — idempotente (upsert por slug), gerando 10 canteiros numa
+  grade 5 × 2 de quadrados de aproximadamente 50 m ao redor do centro configurado,
+  com nomes em português de árvores nativas brasileiras. Lê o centro das settings;
+  rodar duas vezes não muda nada.
+- Testes: formato do GeoJSON, ida e volta da geometria pelo banco, resolução por
+  slug e por UUID, tratamento de 404, exigência do token administrativo e
+  idempotência do seed.
 
-### Validation
-- Seed produces 10 regions; running it again still produces 10.
-- `GET /api/regions` returns a valid `FeatureCollection` that passes a GeoJSON
-  schema check.
-- The geometry check constraint rejects a `LINESTRING`.
-- `photo_count` is present and zero, resolved in a single query (verified by
-  logging the SQL, not assumed).
-- `pytest` passes.
-
----
-
-## Phase 3 — Interactive map
-
-**Goal:** the map shows real regions from the backend and navigates to them.
-
-### Deliverables
-- `App.tsx` with the router; `Layout` and `Header`.
-- `types/api.ts` mirroring the backend schemas.
-- `services/regions.ts`, `hooks/useRegions.ts`.
-- `components/map/PlantingMap.tsx` — `MapContainer`, OSM tiles and attribution
-  from environment variables, height supplied by the parent.
-- `components/map/RegionLayer.tsx` — renders the `FeatureCollection`, handles
-  click and keyboard activation, applies hover and focus styling.
-- `components/map/RegionPopup.tsx` — name, photo count, link to the region.
-- `MapPage` — full-height layout, fits bounds to the returned features.
-- `feedback/LoadingState`, `ErrorState`, `EmptyState`.
-- `HomePage` with real content: what the project is, how to take part, call to
-  action to the map.
-- Tests for `RegionLayer` with `react-leaflet` mocked.
-
-### Validation
-- Regions render; there is no hardcoded geography in the frontend.
-- Tapping a region opens its page.
-- The map fills its container on a 360 px-wide viewport with no grey area and no
-  horizontal page scroll.
-- Strict Mode causes no double initialization and no console errors.
-- Stopping the backend produces the error state, not a blank screen.
+### Validação
+- O seed produz 10 canteiros; rodar de novo continua produzindo 10.
+- `GET /api/regions` devolve uma `FeatureCollection` válida, que passa numa
+  verificação de schema GeoJSON.
+- A constraint CHECK de geometria rejeita uma `LINESTRING`.
+- `photo_count` está presente e vale zero, resolvido numa única consulta
+  (verificado pelo log de SQL, não presumido).
+- `pytest` passa.
 
 ---
 
-## Phase 4 — Region pages
+## Fase 3 — Mapa interativo
 
-**Goal:** a region page reachable by URL, with its (still empty) timeline.
+**Objetivo:** o mapa mostra os canteiros reais vindos do backend e navega até eles.
 
-### Deliverables
-- `app/models/photo.py` and its migration, per architecture §4.3.
-- `app/services/photo_service.py` — listing with pagination.
+### Entregáveis
+- `App.tsx` com o roteador; `Layout` e `Header`.
+- `types/api.ts` espelhando os schemas do backend.
+- `services/regions.ts` e `hooks/useRegions.ts`.
+- `components/map/PlantingMap.tsx` — `MapContainer`, tiles e atribuição do
+  OpenStreetMap vindos de variáveis de ambiente, altura fornecida pelo pai.
+- `components/map/RegionLayer.tsx` — desenha a `FeatureCollection`, trata clique e
+  ativação por teclado, aplica estilo de hover e de foco.
+- `components/map/RegionPopup.tsx` — nome, contagem de fotos e link para o
+  canteiro.
+- `MapPage` — layout de altura cheia, ajustando o enquadramento aos limites das
+  features retornadas.
+- `feedback/LoadingState`, `ErrorState` e `EmptyState`.
+- `HomePage` com conteúdo de verdade: o que é o projeto, como participar e chamada
+  para ação levando ao mapa.
+- Testes do `RegionLayer` com o `react-leaflet` simulado.
+
+### Validação
+- Os canteiros aparecem; não há nenhuma geografia fixada em código no frontend.
+- Tocar num canteiro abre a página dele.
+- O mapa preenche o container numa viewport de 360 px de largura, sem área cinza e
+  sem scroll horizontal na página.
+- O Strict Mode não causa inicialização dupla nem erro no console.
+- Com o backend parado, aparece o estado de erro, não uma tela em branco.
+
+---
+
+## Fase 4 — Páginas de canteiro
+
+**Objetivo:** uma página de canteiro alcançável por URL, com a sua linha do tempo
+(ainda vazia).
+
+### Entregáveis
+- `app/models/photo.py` e a migration correspondente, conforme arquitetura §4.3.
+- `app/services/photo_service.py` — listagem com paginação.
 - `GET /api/regions/{region}/photos`.
-- `GET /api/photos/{photo_id}/file` — streams from the storage backend, correct
-  content type, `Cache-Control` for immutable content.
-- `RegionPage` — name, description, a small map centred on the region, photo
-  count, timeline, and a disabled upload button until Phase 5.
-- `PhotoTimeline` and `PhotoCard`, grouped by date, newest first.
-- `NotFoundPage`, plus a real 404 for an unknown slug.
+- `GET /api/photos/{photo_id}/file` — transmite a partir do backend de storage,
+  com content type correto e `Cache-Control` de conteúdo imutável.
+- `RegionPage` — nome, descrição, um mapa pequeno centrado no canteiro, contagem de
+  fotos, linha do tempo e um botão de envio desabilitado até a Fase 5.
+- `PhotoTimeline` e `PhotoCard`, agrupados por data, mais recentes primeiro.
+- `NotFoundPage`, e um 404 de verdade para slug desconhecido.
 
-### Validation
-- A region URL loads directly, without visiting the map first.
-- The empty state explains how to contribute instead of showing a blank area.
-- The small map renders correctly next to page content, at a fixed aspect ratio.
-- An unknown slug produces the 404 page, not an error state.
-
----
-
-## Phase 5 — Photo uploads
-
-**Goal:** the QR contribution flow works end to end.
-
-### Deliverables
-- `app/storage/base.py` — the `StorageBackend` protocol.
-- `app/storage/local.py` — `LocalFilesystemStorage`, injected as a dependency.
-- `app/services/image_processing.py` — size limit, real-format detection through
-  Pillow, decompression-bomb guard, EXIF extraction, orientation applied,
-  re-encode with metadata stripped.
-- `POST /api/regions/{region}/photos` — multipart: `file`, `description`,
-  `contributor_name`, `share_location`.
-- Domain exceptions mapped to Portuguese, user-safe messages with stable codes.
-- `PhotoUploadForm` — file picker with immediate preview, optional name and
-  observation, unchecked `share_location` checkbox with plain-language text
-  explaining what it does, progress state, disabled submit while in flight.
-- The timeline refreshes on success through query invalidation.
-- Tests: happy path; oversized file; wrong format; corrupt bytes; a `.jpg`
-  filename holding non-image bytes; EXIF absent from the stored file, verified by
-  re-reading it; GPS written only when opted in.
-
-### Validation
-- A photo uploaded from a phone appears in the timeline.
-- Every rejection path returns a message a non-technical user can act on.
-- The stored file, re-opened, has no EXIF block.
-- With the checkbox unchecked, a photo carrying GPS produces `location IS NULL`.
-- Two uploads of identically named files do not collide.
+### Validação
+- A URL de um canteiro carrega direto, sem passar antes pelo mapa.
+- O estado vazio explica como contribuir, em vez de mostrar uma área em branco.
+- O mapa pequeno renderiza corretamente ao lado do conteúdo, com proporção fixa.
+- Um slug desconhecido leva à página 404, não ao estado de erro.
 
 ---
 
-## Phase 6 — QR codes
+## Fase 5 — Envio de fotos
 
-**Goal:** an organizer can print codes and place them in the field.
+**Objetivo:** o fluxo de contribuição por QR Code funciona de ponta a ponta.
 
-### Deliverables
-- `app/services/qr_service.py`, `GET /api/regions/{region}/qr-code`
-  (`?format=png|svg`, `?size=`), encoding `{PUBLIC_WEB_BASE_URL}/r/{qr_token}`.
-- `GET /api/qr/{qr_token}` and the `/r/:qrToken` frontend route that redirects to
-  the region.
-- A printable sheet: one card per region with its QR code and name, laid out for
-  A4 with print CSS.
-- `POST /api/regions/import` accepting a GeoJSON `FeatureCollection`, matching by
-  slug, reporting created/updated/skipped counts.
-- Tests: encoded URL contents, content types, unknown token 404, import matching
-  and idempotency.
+### Entregáveis
+- `app/storage/base.py` — o protocolo `StorageBackend`.
+- `app/storage/local.py` — `LocalFilesystemStorage`, injetado como dependência.
+- `app/services/image_processing.py` — limite de tamanho, detecção de formato real
+  pelo Pillow, proteção contra bomba de descompressão, extração de EXIF, aplicação
+  da orientação e reescrita sem metadados.
+- `POST /api/regions/{region}/photos` — multipart com `file`, `description`,
+  `contributor_name` e `share_location`.
+- Exceções de domínio traduzidas para mensagens em português, seguras para o
+  usuário, com códigos estáveis.
+- `PhotoUploadForm` — seletor de arquivo com preview imediato, nome e observação
+  opcionais, checkbox `share_location` desmarcado com texto em linguagem simples
+  explicando o que ele faz, estado de progresso e botão desabilitado durante o
+  envio.
+- A linha do tempo se atualiza sozinha ao concluir, por invalidação de query.
+- Testes: caminho feliz; arquivo grande demais; formato errado; bytes corrompidos;
+  nome `.jpg` com conteúdo que não é imagem; ausência de EXIF no arquivo gravado,
+  verificada relendo-o; GPS gravado somente com adesão.
 
-### Validation
-- A code scanned with a phone camera opens the correct region.
-- Renaming a region and changing its slug does not invalidate the printed code.
-- Importing a GeoJSON file replaces placeholder geometry while preserving each
-  region's `qr_token`.
-
----
-
-## Phase 7 — Polish
-
-### Deliverables
-- Mobile pass on every page at 360 px; touch targets at least 44 px.
-- Accessibility: keyboard navigation over map regions, visible focus, alt text on
-  photos, labelled form fields, contrast checked, one `h1` per page.
-- Error handling review: no raw stack traces, no English strings reaching users.
-- Security review against architecture §9; decide on rate limiting for the upload
-  endpoint.
-- Backend `Dockerfile` and a deployment note.
-- Documentation: manual test scripts for each flow in spec §15, an organizer
-  guide, and a coverage gap review.
+### Validação
+- Uma foto enviada pelo celular aparece na linha do tempo.
+- Todo caminho de rejeição devolve uma mensagem sobre a qual um usuário não
+  técnico consegue agir.
+- O arquivo gravado, reaberto, não tem bloco EXIF.
+- Com o checkbox desmarcado, uma foto com GPS resulta em `location IS NULL`.
+- Dois envios de arquivos com nome idêntico não colidem.
 
 ---
 
-## Working agreement
+## Fase 6 — QR Codes
 
-- One phase at a time; validation reported with real command output, not claimed.
-- Conventional Commits with Portuguese subjects, per the repository conventions.
-- Architectural changes are recorded in `docs/architecture.md` as they are made,
-  not at the end.
-- Anything touching the privacy model, authentication, paid services, or an
-  irreversible data-model change stops for confirmation.
+**Objetivo:** o organizador consegue imprimir os códigos e instalá-los em campo.
+
+### Entregáveis
+- `app/services/qr_service.py` e `GET /api/regions/{region}/qr-code`
+  (`?format=png|svg`, `?size=`), codificando
+  `{PUBLIC_WEB_BASE_URL}/r/{qr_token}`.
+- `GET /api/qr/{qr_token}` e a rota `/r/:qrToken` no frontend, redirecionando para
+  o canteiro.
+- Uma folha imprimível: um card por canteiro, com o QR Code e o nome, diagramada
+  para A4 com CSS de impressão.
+- `POST /api/regions/import` aceitando uma `FeatureCollection` GeoJSON, casando
+  por slug e relatando quantos foram criados, atualizados e ignorados.
+- Testes: conteúdo da URL codificada, content types, 404 para token desconhecido,
+  casamento e idempotência da importação.
+
+### Validação
+- Um código escaneado com a câmera do celular abre o canteiro correto.
+- Renomear um canteiro e trocar o seu slug não invalida o código já impresso.
+- Importar um arquivo GeoJSON substitui a geometria placeholder preservando o
+  `qr_token` de cada canteiro.
+
+---
+
+## Fase 7 — Polimento
+
+### Entregáveis
+- Passada de mobile em todas as páginas, a 360 px; alvos de toque de pelo menos
+  44 px.
+- Acessibilidade: navegação por teclado sobre os canteiros do mapa, foco visível,
+  texto alternativo nas fotos, campos com label, contraste verificado e um único
+  `h1` por página.
+- Revisão do tratamento de erros: nenhum stack trace e nenhuma string em inglês
+  chegando ao usuário.
+- Revisão de segurança contra arquitetura §9; decisão sobre rate limiting no
+  endpoint de envio.
+- `Dockerfile` do backend e uma nota de publicação.
+- Documentação: roteiros de teste manual para cada fluxo da especificação §15,
+  guia do organizador e revisão das lacunas de cobertura.
+
+---
+
+## Acordo de trabalho
+
+- Uma fase por vez; validação relatada com a saída real dos comandos, não
+  afirmada.
+- Nomes de branch em inglês; mensagens de commit em português, seguindo
+  Conventional Commits.
+- Mudanças de arquitetura são registradas em `docs/architecture.md` no momento em
+  que acontecem, não no final.
+- Qualquer coisa que toque o modelo de privacidade, autenticação, serviços pagos
+  ou uma mudança irreversível no modelo de dados para para confirmação.

@@ -147,7 +147,11 @@ significado.
 
 **Sidebar esquerda (novo componente `RegionSidebar`):**
 - Recolhível/escondível.
-- Lista regiões com busca/filtro por região e por cidade.
+- Lista regiões com busca/filtro por nome de região. Filtro por cidade
+  fica fora de escopo por ora: `Region` não tem campo `city` hoje e só
+  existe uma cidade (Matias Barbosa) nos dados — adicionar esse campo
+  (e o filtro) quando uma segunda cidade entrar de verdade, sem mexer
+  no plano de backend já commitado.
 - Cada item mostra a contagem de plantings daquela região (ex.: "AAMA —
   32 mudas").
 - Estrutura pensada para depois receber uma aba de "atividade recente"

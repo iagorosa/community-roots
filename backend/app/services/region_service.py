@@ -5,7 +5,6 @@ writes are admin-only (issue #12).
 
 import json
 import re
-import secrets
 import unicodedata
 import uuid
 from typing import Any
@@ -14,6 +13,7 @@ from sqlalchemy import ColumnElement, Row, func, literal, select
 from sqlalchemy.orm import Session
 
 from app.core.errors import NotFoundError, ValidationFailedError
+from app.models.qr_code import QrCode
 from app.models.region import Region
 from app.schemas.region import (
     RegionCreate,
@@ -22,6 +22,7 @@ from app.schemas.region import (
     RegionProperties,
     RegionUpdate,
 )
+from app.services import qr_code_service
 
 
 class RegionNotFound(NotFoundError):
@@ -44,6 +45,14 @@ def _region_feature_columns() -> tuple[ColumnElement[Any], ...]:
     Python, so there is exactly one implementation of that conversion
     (architecture.md §5.1).
 
+    `qr_token` comes from an INNER JOIN on `qr_codes` — every region gets
+    exactly one QrCode row at creation time
+    (`qr_code_service.create_region_qr_code`), so a region missing one would
+    be a data-integrity bug, not a valid "no QR yet" state; the INNER JOIN
+    makes that invariant visible (such a region silently drops out of every
+    listing) instead of surfacing as a 500 from a `NULL` where `qr_token`
+    must be a `str`.
+
     `photo_count`/`latest_photo_at` are literals, not the `LEFT JOIN LATERAL`
     the issue describes: the `photos` table doesn't exist yet — the Photo
     model is issue #20, milestone "Fase 4", which lands after this one. This
@@ -55,13 +64,17 @@ def _region_feature_columns() -> tuple[ColumnElement[Any], ...]:
         Region.name,
         Region.description,
         Region.status,
-        Region.qr_token,
+        QrCode.token.label("qr_token"),
         Region.created_at,
         Region.updated_at,
         func.ST_AsGeoJSON(Region.geom).label("geometry_geojson"),
         literal(0).label("photo_count"),
         literal(None).label("latest_photo_at"),
     )
+
+
+def _region_query() -> Any:
+    return select(*_region_feature_columns()).join(QrCode, QrCode.region_id == Region.id)
 
 
 def _row_to_feature(row: Row[Any]) -> RegionFeature:
@@ -84,7 +97,7 @@ def _row_to_feature(row: Row[Any]) -> RegionFeature:
 
 def list_regions(db: Session) -> RegionFeatureCollection:
     rows = db.execute(
-        select(*_region_feature_columns()).where(_PUBLICLY_VISIBLE).order_by(Region.name, Region.id)
+        _region_query().where(_PUBLICLY_VISIBLE).order_by(Region.name, Region.id)
     ).all()
     return RegionFeatureCollection(features=[_row_to_feature(row) for row in rows])
 
@@ -96,7 +109,7 @@ def get_region(db: Session, identifier: str) -> RegionFeature:
     takes a `{region}` path parameter resolves it by calling this function.
     """
     row = db.execute(
-        select(*_region_feature_columns()).where(_identifier_filter(identifier), _PUBLICLY_VISIBLE)
+        _region_query().where(_identifier_filter(identifier), _PUBLICLY_VISIBLE)
     ).first()
     if row is None:
         raise RegionNotFound(identifier)
@@ -118,7 +131,7 @@ def _fetch_feature_by_id(db: Session, region_id: uuid.UUID) -> RegionFeature:
     still needs to see the result, even though `_PUBLICLY_VISIBLE` would now
     hide it from everyone else.
     """
-    row = db.execute(select(*_region_feature_columns()).where(Region.id == region_id)).first()
+    row = db.execute(_region_query().where(Region.id == region_id)).first()
     if row is None:
         raise RegionNotFound(str(region_id))
     return _row_to_feature(row)
@@ -184,9 +197,10 @@ def create_region(db: Session, payload: RegionCreate) -> RegionFeature:
         description=payload.description,
         geom=_geometry_to_geom_expression(payload.geometry),
         status=payload.status,
-        qr_token=secrets.token_urlsafe(9),
     )
     db.add(region)
+    db.flush()  # assigns region.id (server-side gen_random_uuid()) before the QrCode FK needs it
+    qr_code_service.create_region_qr_code(db, region.id)
     db.commit()
     return _fetch_feature_by_id(db, region.id)
 

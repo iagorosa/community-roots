@@ -25,10 +25,6 @@ def _make_region(**overrides: object) -> Region:
         "slug": f"regiao-{uuid.uuid4().hex[:8]}",
         "name": "Região de teste",
         "geom": WKTElement(_POINT_WKT, srid=4326),
-        # `Region.qr_token` is still a required, unique column pre-Task-2
-        # (it only moves to the standalone `QrCode` entity there), so this
-        # helper — unlike the plan's Task 1 listing — must supply one.
-        "qr_token": f"token-{uuid.uuid4().hex[:8]}",
     }
     defaults.update(overrides)
     return Region(**defaults)

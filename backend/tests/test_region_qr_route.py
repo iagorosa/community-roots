@@ -8,6 +8,7 @@ why `zxing-cpp`/`cairosvg` were chosen over `pyzbar` (unavailable: no system
 """
 
 import io
+import uuid
 
 import cairosvg
 import zxingcpp
@@ -17,19 +18,23 @@ from PIL import Image
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.models.qr_code import QrCode
 from app.models.region import Region
 from app.services.qr_service import MAX_BOX_SIZE
 
 
-def _make_region(**overrides: object) -> Region:
+def _add_region(db_session: Session, *, token: str | None = None, **overrides: object) -> Region:
     defaults: dict[str, object] = {
         "slug": "canteiro-qr",
         "name": "Canteiro QR",
         "geom": WKTElement("POINT(-43.3130 -21.8845)", srid=4326),
-        "qr_token": "token-qr-abc",
     }
     defaults.update(overrides)
-    return Region(**defaults)
+    region = Region(**defaults)
+    db_session.add(region)
+    db_session.flush()
+    db_session.add(QrCode(region_id=region.id, token=token or f"token-{uuid.uuid4().hex[:8]}"))
+    return region
 
 
 def _expected_url(qr_token: str) -> str:
@@ -54,7 +59,7 @@ def _decode_svg(svg_bytes: bytes) -> str:
 
 
 def test_get_qr_code_defaults_to_png(client: TestClient, db_session: Session) -> None:
-    db_session.add(_make_region())
+    _add_region(db_session, token="token-qr-abc")
     db_session.commit()
 
     response = client.get("/api/regions/canteiro-qr/qr-code")
@@ -65,7 +70,7 @@ def test_get_qr_code_defaults_to_png(client: TestClient, db_session: Session) ->
 
 
 def test_get_qr_code_svg_format(client: TestClient, db_session: Session) -> None:
-    db_session.add(_make_region())
+    _add_region(db_session, token="token-qr-abc")
     db_session.commit()
 
     response = client.get("/api/regions/canteiro-qr/qr-code?format=svg")
@@ -76,8 +81,7 @@ def test_get_qr_code_svg_format(client: TestClient, db_session: Session) -> None
 
 
 def test_get_qr_code_resolves_by_uuid(client: TestClient, db_session: Session) -> None:
-    region = _make_region()
-    db_session.add(region)
+    region = _add_region(db_session, token="token-qr-abc")
     db_session.commit()
 
     response = client.get(f"/api/regions/{region.id}/qr-code")
@@ -87,7 +91,7 @@ def test_get_qr_code_resolves_by_uuid(client: TestClient, db_session: Session) -
 
 
 def test_get_qr_code_respects_size_param(client: TestClient, db_session: Session) -> None:
-    db_session.add(_make_region())
+    _add_region(db_session, token="token-qr-abc")
     db_session.commit()
 
     small = client.get("/api/regions/canteiro-qr/qr-code?size=4")
@@ -99,7 +103,7 @@ def test_get_qr_code_respects_size_param(client: TestClient, db_session: Session
 
 
 def test_get_qr_code_rejects_invalid_format(client: TestClient, db_session: Session) -> None:
-    db_session.add(_make_region())
+    _add_region(db_session, token="token-qr-abc")
     db_session.commit()
 
     response = client.get("/api/regions/canteiro-qr/qr-code?format=jpeg")
@@ -108,7 +112,7 @@ def test_get_qr_code_rejects_invalid_format(client: TestClient, db_session: Sess
 
 
 def test_get_qr_code_rejects_non_positive_size(client: TestClient, db_session: Session) -> None:
-    db_session.add(_make_region())
+    _add_region(db_session, token="token-qr-abc")
     db_session.commit()
 
     response = client.get("/api/regions/canteiro-qr/qr-code?size=0")
@@ -123,7 +127,7 @@ def test_get_qr_code_rejects_size_above_the_cap(client: TestClient, db_session: 
     `qr_service.MAX_BOX_SIZE`'s comment for the measurements behind the cap
     `Query(le=...)` enforces here.
     """
-    db_session.add(_make_region())
+    _add_region(db_session, token="token-qr-abc")
     db_session.commit()
 
     response = client.get(f"/api/regions/canteiro-qr/qr-code?size={MAX_BOX_SIZE + 1}")
@@ -151,7 +155,7 @@ def test_get_qr_code_returns_404_for_draft_region(client: TestClient, db_session
     region's QR before publishing is a real but separate need, left for a
     future admin-authenticated variant if one turns out to be needed.
     """
-    db_session.add(_make_region(slug="canteiro-draft", status="draft", qr_token="token-draft"))
+    _add_region(db_session, slug="canteiro-draft", status="draft", token="token-draft")
     db_session.commit()
 
     response = client.get("/api/regions/canteiro-draft/qr-code")
@@ -163,9 +167,7 @@ def test_get_qr_code_returns_404_for_draft_region(client: TestClient, db_session
 def test_get_qr_code_returns_404_for_archived_region(
     client: TestClient, db_session: Session
 ) -> None:
-    db_session.add(
-        _make_region(slug="canteiro-archived", status="archived", qr_token="token-archived")
-    )
+    _add_region(db_session, slug="canteiro-archived", status="archived", token="token-archived")
     db_session.commit()
 
     response = client.get("/api/regions/canteiro-archived/qr-code")

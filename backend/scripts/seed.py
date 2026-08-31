@@ -9,7 +9,6 @@ on first creation and left untouched on later reruns.
 """
 
 import math
-import secrets
 import sys
 from pathlib import Path
 
@@ -25,6 +24,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.db.session import SessionLocal
 from app.models.region import Region
+from app.services.qr_code_service import create_region_qr_code
 from app.services.region_service import slugify
 
 _METERS_PER_DEGREE_LATITUDE = 111_320
@@ -123,15 +123,15 @@ def seed(
 
         region = db.execute(select(Region).where(Region.slug == slug)).scalar_one_or_none()
         if region is None:
-            db.add(
-                Region(
-                    slug=slug,
-                    name=name,
-                    description=_PLACEHOLDER_DESCRIPTION,
-                    geom=geom,
-                    qr_token=secrets.token_urlsafe(9),
-                )
+            new_region = Region(
+                slug=slug,
+                name=name,
+                description=_PLACEHOLDER_DESCRIPTION,
+                geom=geom,
             )
+            db.add(new_region)
+            db.flush()
+            create_region_qr_code(db, new_region.id)
             created += 1
         else:
             region.name = name

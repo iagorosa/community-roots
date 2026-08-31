@@ -1,5 +1,6 @@
 """Tests for `GET /api/regions/{region}/photos` (issue #21)."""
 
+import uuid
 from datetime import UTC, datetime
 
 import pytest
@@ -8,6 +9,7 @@ from geoalchemy2.elements import WKTElement
 from sqlalchemy.orm import Session
 
 from app.models.photo import Photo
+from app.models.qr_code import QrCode
 from app.models.region import Region
 
 _POLYGON_WKT = (
@@ -16,15 +18,24 @@ _POLYGON_WKT = (
 )
 
 
-def _make_region(**overrides: object) -> Region:
+def _add_region(db_session: Session, **overrides: object) -> Region:
+    """Insert a `Region` plus the `QrCode` row every real region gets at
+    creation time (`region_service.create_region`) — `region_service.
+    get_region` (which `photo_service.list_region_photos` reuses to resolve
+    the `{region}` path parameter) INNER JOINs on it, so a region without one
+    wouldn't be a realistic fixture.
+    """
     defaults: dict[str, object] = {
         "slug": "canteiro-a",
         "name": "Canteiro A",
         "geom": WKTElement(_POLYGON_WKT, srid=4326),
-        "qr_token": "token-a",
     }
     defaults.update(overrides)
-    return Region(**defaults)
+    region = Region(**defaults)
+    db_session.add(region)
+    db_session.flush()
+    db_session.add(QrCode(region_id=region.id, token=f"token-{uuid.uuid4().hex[:8]}"))
+    return region
 
 
 def _dt(hour: int, minute: int = 0) -> datetime:
@@ -48,9 +59,7 @@ def _make_photo(region_id: object, **overrides: object) -> Photo:
 def test_list_photos_returns_published_photos_most_recent_first(
     client: TestClient, db_session: Session
 ) -> None:
-    region = _make_region()
-    db_session.add(region)
-    db_session.flush()
+    region = _add_region(db_session)
 
     older = _make_photo(region.id, uploaded_at=_dt(9), description="Foto antiga")
     newer = _make_photo(region.id, uploaded_at=_dt(11), description="Foto nova")
@@ -66,9 +75,7 @@ def test_list_photos_returns_published_photos_most_recent_first(
 
 
 def test_list_photos_hides_photos_marked_hidden(client: TestClient, db_session: Session) -> None:
-    region = _make_region()
-    db_session.add(region)
-    db_session.flush()
+    region = _add_region(db_session)
 
     published = _make_photo(region.id, status="published", description="Visível")
     hidden = _make_photo(region.id, status="hidden", uploaded_at=_dt(12), description="Oculta")
@@ -86,9 +93,7 @@ def test_list_photos_hides_photos_marked_hidden(client: TestClient, db_session: 
 def test_list_photos_exposes_latitude_longitude_and_photo_url_not_storage_key(
     client: TestClient, db_session: Session
 ) -> None:
-    region = _make_region()
-    db_session.add(region)
-    db_session.flush()
+    region = _add_region(db_session)
 
     photo = _make_photo(region.id, location=WKTElement("POINT(-43.3127 -21.8843)", srid=4326))
     db_session.add(photo)
@@ -108,9 +113,7 @@ def test_list_photos_exposes_width_and_height(client: TestClient, db_session: Se
     """The frontend timeline (issue #24) needs `width`/`height` in the wire
     response to reserve layout space for each image before it loads.
     """
-    region = _make_region()
-    db_session.add(region)
-    db_session.flush()
+    region = _add_region(db_session)
 
     photo = _make_photo(region.id, width=800, height=600)
     db_session.add(photo)
@@ -135,9 +138,7 @@ def test_list_photos_returns_404_for_unknown_region(client: TestClient) -> None:
 def test_list_photos_respects_limit_and_returns_a_usable_next_cursor(
     client: TestClient, db_session: Session
 ) -> None:
-    region = _make_region()
-    db_session.add(region)
-    db_session.flush()
+    region = _add_region(db_session)
 
     photos = [_make_photo(region.id, uploaded_at=_dt(10, i)) for i in range(3)]
     db_session.add_all(photos)
@@ -164,8 +165,7 @@ def test_list_photos_respects_limit_and_returns_a_usable_next_cursor(
 def test_list_photos_returns_422_for_a_malformed_cursor(
     client: TestClient, db_session: Session
 ) -> None:
-    region = _make_region()
-    db_session.add(region)
+    _add_region(db_session)
     db_session.commit()
 
     response = client.get("/api/regions/canteiro-a/photos", params={"cursor": "not-a-valid-cursor"})
@@ -177,8 +177,7 @@ def test_list_photos_returns_422_for_a_malformed_cursor(
 
 
 def test_list_photos_rejects_limit_out_of_bounds(client: TestClient, db_session: Session) -> None:
-    region = _make_region()
-    db_session.add(region)
+    _add_region(db_session)
     db_session.commit()
 
     too_low = client.get("/api/regions/canteiro-a/photos", params={"limit": 0})
@@ -192,9 +191,7 @@ def test_list_photos_rejects_limit_out_of_bounds(client: TestClient, db_session:
 
 
 def test_list_photos_resolves_region_by_uuid(client: TestClient, db_session: Session) -> None:
-    region = _make_region()
-    db_session.add(region)
-    db_session.flush()
+    region = _add_region(db_session)
 
     photo = _make_photo(region.id, description="Foto via uuid")
     db_session.add(photo)

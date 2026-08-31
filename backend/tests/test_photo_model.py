@@ -30,7 +30,6 @@ def _make_region(**overrides: object) -> Region:
         "slug": f"canteiro-{uuid.uuid4().hex[:8]}",
         "name": "Canteiro de teste",
         "geom": WKTElement(_POLYGON_WKT, srid=4326),
-        "qr_token": f"token-{uuid.uuid4().hex[:8]}",
     }
     defaults.update(overrides)
     return Region(**defaults)

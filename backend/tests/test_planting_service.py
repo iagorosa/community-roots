@@ -12,6 +12,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.errors import ValidationFailedError
+from app.models.photo import Photo
 from app.models.planting import Planting
 from app.models.qr_code import QrCode
 from app.models.region import Region
@@ -171,3 +172,30 @@ def test_update_planting_rejects_an_explicit_null_status(db_session: Session) ->
 
     with pytest.raises(ValidationFailedError):
         planting_service.update_planting(db_session, planting.id, PlantingUpdate(status=None))
+
+
+def _add_photo(db_session: Session, planting_id: uuid.UUID, **overrides: object) -> Photo:
+    defaults: dict[str, object] = {
+        "planting_id": planting_id,
+        "storage_key": f"photos/{uuid.uuid4().hex}.jpg",
+        "content_type": "image/jpeg",
+        "byte_size": 1000,
+        "width": 100,
+        "height": 100,
+    }
+    defaults.update(overrides)
+    photo = Photo(**defaults)
+    db_session.add(photo)
+    return photo
+
+
+def test_get_planting_reports_real_photo_count(db_session: Session) -> None:
+    region = _add_region(db_session)
+    planting = _add_planting(db_session, region.id)
+    _add_photo(db_session, planting.id)
+    _add_photo(db_session, planting.id, status="hidden")
+    db_session.commit()
+
+    feature = planting_service.get_planting(db_session, planting.id)
+
+    assert feature.properties.photo_count == 1  # `hidden` excluded

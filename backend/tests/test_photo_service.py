@@ -1,6 +1,6 @@
-"""Tests for `app/services/photo_service.py`: the region photo timeline and
-its keyset pagination (issue #21), plus resolving a photo's file for
-`GET /api/photos/{photo_id}/file` (issue #22).
+"""Tests for `app/services/photo_service.py`: the planting photo timeline and
+its keyset pagination (issue #21, migrated to Planting by issue #84), plus
+resolving a photo's file for `GET /api/photos/{photo_id}/file` (issue #22).
 """
 
 import uuid
@@ -12,11 +12,12 @@ from geoalchemy2.elements import WKTElement
 from sqlalchemy.orm import Session
 
 from app.models.photo import Photo
+from app.models.planting import Planting
 from app.models.qr_code import QrCode
 from app.models.region import Region
 from app.services import photo_service
 from app.services.photo_service import InvalidCursor, PhotoNotFound
-from app.services.region_service import RegionNotFound
+from app.services.planting_service import PlantingNotFound
 from app.storage.local import LocalFilesystemStorage
 
 _POLYGON_WKT = (
@@ -28,10 +29,7 @@ _POINT_WKT = "POINT(-43.3127 -21.8843)"
 
 def _add_region(db_session: Session, **overrides: object) -> Region:
     """Insert a `Region` plus the `QrCode` row every real region gets at
-    creation time (`region_service.create_region`) — `region_service.
-    get_region` (which `photo_service.list_region_photos` reuses to resolve
-    the `{region}` path parameter) INNER JOINs on it, so a region without one
-    wouldn't be a realistic fixture.
+    creation time (`region_service.create_region`).
     """
     defaults: dict[str, object] = {
         "slug": "canteiro-a",
@@ -46,13 +44,32 @@ def _add_region(db_session: Session, **overrides: object) -> Region:
     return region
 
 
+def _add_planting(db_session: Session, region_id: uuid.UUID, **overrides: object) -> Planting:
+    """Insert a `Planting` plus the `QrCode` row every real planting gets at
+    creation time (`planting_service.create_planting`) — `planting_service.
+    get_planting` (which `photo_service.list_planting_photos` reuses to
+    validate the `{planting_id}` path parameter) INNER JOINs on it, so a
+    planting without one wouldn't be a realistic fixture.
+    """
+    defaults: dict[str, object] = {
+        "region_id": region_id,
+        "geom": WKTElement(_POINT_WKT, srid=4326),
+    }
+    defaults.update(overrides)
+    planting = Planting(**defaults)
+    db_session.add(planting)
+    db_session.flush()
+    db_session.add(QrCode(planting_id=planting.id, token=f"token-{uuid.uuid4().hex[:8]}"))
+    return planting
+
+
 def _dt(hour: int, minute: int, second: int = 0) -> datetime:
     return datetime(2026, 1, 1, hour, minute, second, tzinfo=UTC)
 
 
-def _make_photo(region_id: object, **overrides: object) -> Photo:
+def _make_photo(planting_id: object, **overrides: object) -> Photo:
     defaults: dict[str, object] = {
-        "region_id": region_id,
+        "planting_id": planting_id,
         "storage_key": "photos/whatever.jpg",
         "content_type": "image/jpeg",
         "byte_size": 123_456,
@@ -64,33 +81,35 @@ def _make_photo(region_id: object, **overrides: object) -> Photo:
     return Photo(**defaults)
 
 
-def test_list_region_photos_returns_published_photos_most_recent_first(
+def test_list_planting_photos_returns_published_photos_most_recent_first(
     db_session: Session,
 ) -> None:
     region = _add_region(db_session)
+    planting = _add_planting(db_session, region.id)
 
-    older = _make_photo(region.id, uploaded_at=_dt(9, 0))
-    newer = _make_photo(region.id, uploaded_at=_dt(11, 0))
+    older = _make_photo(planting.id, uploaded_at=_dt(9, 0))
+    newer = _make_photo(planting.id, uploaded_at=_dt(11, 0))
     db_session.add_all([older, newer])
     db_session.commit()
 
-    page = photo_service.list_region_photos(db_session, "canteiro-a")
+    page = photo_service.list_planting_photos(db_session, planting.id)
 
     assert [photo.id for photo in page.items] == [newer.id, older.id]
     assert page.next_cursor is None
 
 
-def test_list_region_photos_derives_latitude_and_longitude_from_location(
+def test_list_planting_photos_derives_latitude_and_longitude_from_location(
     db_session: Session,
 ) -> None:
     region = _add_region(db_session)
+    planting = _add_planting(db_session, region.id)
 
-    with_location = _make_photo(region.id, location=WKTElement(_POINT_WKT, srid=4326))
-    without_location = _make_photo(region.id, uploaded_at=_dt(8, 0))
+    with_location = _make_photo(planting.id, location=WKTElement(_POINT_WKT, srid=4326))
+    without_location = _make_photo(planting.id, uploaded_at=_dt(8, 0))
     db_session.add_all([with_location, without_location])
     db_session.commit()
 
-    page = photo_service.list_region_photos(db_session, "canteiro-a")
+    page = photo_service.list_planting_photos(db_session, planting.id)
 
     by_id = {photo.id: photo for photo in page.items}
     located = by_id[with_location.id]
@@ -100,57 +119,62 @@ def test_list_region_photos_derives_latitude_and_longitude_from_location(
     assert by_id[without_location.id].longitude is None
 
 
-def test_list_region_photos_exposes_width_and_height(db_session: Session) -> None:
+def test_list_planting_photos_exposes_width_and_height(db_session: Session) -> None:
     """The frontend timeline (issue #24) reserves layout space for each
     image via its `width`/`height` HTML attributes before it loads — it can
     only do that if `PhotoOut` carries the columns already recorded on
     upload (issue #20), rather than only the derived `latitude`/`longitude`.
     """
     region = _add_region(db_session)
+    planting = _add_planting(db_session, region.id)
 
-    photo = _make_photo(region.id, width=800, height=600)
+    photo = _make_photo(planting.id, width=800, height=600)
     db_session.add(photo)
     db_session.commit()
 
-    page = photo_service.list_region_photos(db_session, "canteiro-a")
+    page = photo_service.list_planting_photos(db_session, planting.id)
 
     [item] = page.items
     assert item.width == 800
     assert item.height == 600
 
 
-def test_list_region_photos_excludes_hidden_photos(db_session: Session) -> None:
+def test_list_planting_photos_excludes_hidden_photos(db_session: Session) -> None:
     region = _add_region(db_session)
+    planting = _add_planting(db_session, region.id)
 
-    published = _make_photo(region.id, status="published")
-    hidden = _make_photo(region.id, status="hidden", uploaded_at=_dt(12, 0))
+    published = _make_photo(planting.id, status="published")
+    hidden = _make_photo(planting.id, status="hidden", uploaded_at=_dt(12, 0))
     db_session.add_all([published, hidden])
     db_session.commit()
 
-    page = photo_service.list_region_photos(db_session, "canteiro-a")
+    page = photo_service.list_planting_photos(db_session, planting.id)
 
     assert [photo.id for photo in page.items] == [published.id]
 
 
-def test_list_region_photos_raises_not_found_for_unknown_region(db_session: Session) -> None:
-    with pytest.raises(RegionNotFound):
-        photo_service.list_region_photos(db_session, "nao-existe")
+def test_list_planting_photos_raises_not_found_for_unknown_planting(
+    db_session: Session,
+) -> None:
+    with pytest.raises(PlantingNotFound):
+        photo_service.list_planting_photos(db_session, uuid.uuid4())
 
 
-def test_list_region_photos_paginates_by_limit(db_session: Session) -> None:
+def test_list_planting_photos_paginates_by_limit(db_session: Session) -> None:
     region = _add_region(db_session)
+    planting = _add_planting(db_session, region.id)
 
-    photos = [_make_photo(region.id, uploaded_at=_dt(10, i)) for i in range(3)]
+    photos = [_make_photo(planting.id, uploaded_at=_dt(10, i)) for i in range(3)]
     db_session.add_all(photos)
     db_session.commit()
 
-    page = photo_service.list_region_photos(db_session, "canteiro-a", limit=2)
+    page = photo_service.list_planting_photos(db_session, planting.id, limit=2)
 
     assert [photo.id for photo in page.items] == [photos[2].id, photos[1].id]
     assert page.next_cursor is not None
 
 
-def test_list_region_photos_pagination_is_stable_against_concurrent_inserts(
+def test_list_planting_photos_pagination_is_stable_against_concurrent_inserts(
     db_session: Session,
 ) -> None:
     """The critério de pronto requires stable pagination: since the listing
@@ -162,46 +186,49 @@ def test_list_region_photos_pagination_is_stable_against_concurrent_inserts(
     must appear exactly once — not duplicated, not skipped.
     """
     region = _add_region(db_session)
+    planting = _add_planting(db_session, region.id)
 
-    photos = [_make_photo(region.id, uploaded_at=_dt(10, i)) for i in range(3)]
+    photos = [_make_photo(planting.id, uploaded_at=_dt(10, i)) for i in range(3)]
     db_session.add_all(photos)
     db_session.commit()
 
-    first_page = photo_service.list_region_photos(db_session, "canteiro-a", limit=2)
+    first_page = photo_service.list_planting_photos(db_session, planting.id, limit=2)
     assert [photo.id for photo in first_page.items] == [photos[2].id, photos[1].id]
     assert first_page.next_cursor is not None
 
     # Arrives between the two page requests, newer than every photo already
     # fetched — with offset pagination this would push `photos[0]` to a
     # different page or duplicate `photos[1]`.
-    newest = _make_photo(region.id, uploaded_at=_dt(11, 0))
+    newest = _make_photo(planting.id, uploaded_at=_dt(11, 0))
     db_session.add(newest)
     db_session.commit()
 
-    second_page = photo_service.list_region_photos(
-        db_session, "canteiro-a", cursor=first_page.next_cursor, limit=2
+    second_page = photo_service.list_planting_photos(
+        db_session, planting.id, cursor=first_page.next_cursor, limit=2
     )
 
     assert [photo.id for photo in second_page.items] == [photos[0].id]
     assert second_page.next_cursor is None
 
 
-def test_list_region_photos_rejects_a_malformed_cursor(db_session: Session) -> None:
-    _add_region(db_session)
+def test_list_planting_photos_rejects_a_malformed_cursor(db_session: Session) -> None:
+    region = _add_region(db_session)
+    planting = _add_planting(db_session, region.id)
     db_session.commit()
 
     with pytest.raises(InvalidCursor):
-        photo_service.list_region_photos(db_session, "canteiro-a", cursor="not-a-valid-cursor")
+        photo_service.list_planting_photos(db_session, planting.id, cursor="not-a-valid-cursor")
 
 
 def test_open_photo_file_returns_readable_bytes_and_the_stored_content_type(
     db_session: Session, tmp_path: Path
 ) -> None:
     region = _add_region(db_session)
+    planting = _add_planting(db_session, region.id)
 
     (tmp_path / "photos").mkdir()
     (tmp_path / "photos" / "a.png").write_bytes(b"fake-png-bytes")
-    photo = _make_photo(region.id, storage_key="photos/a.png", content_type="image/png")
+    photo = _make_photo(planting.id, storage_key="photos/a.png", content_type="image/png")
     db_session.add(photo)
     db_session.commit()
 
@@ -229,10 +256,11 @@ def test_open_photo_file_raises_photo_not_found_for_a_hidden_photo(
     — see the docstring of `photo_service.open_photo_file` for why.
     """
     region = _add_region(db_session)
+    planting = _add_planting(db_session, region.id)
 
     (tmp_path / "photos").mkdir()
     (tmp_path / "photos" / "a.png").write_bytes(b"fake-png-bytes")
-    photo = _make_photo(region.id, storage_key="photos/a.png", status="hidden")
+    photo = _make_photo(planting.id, storage_key="photos/a.png", status="hidden")
     db_session.add(photo)
     db_session.commit()
 
@@ -249,8 +277,9 @@ def test_open_photo_file_raises_photo_not_found_when_the_file_is_missing_from_st
     unknown id, never as a 500 leaking a filesystem `FileNotFoundError`.
     """
     region = _add_region(db_session)
+    planting = _add_planting(db_session, region.id)
 
-    photo = _make_photo(region.id, storage_key="photos/never-written.png")
+    photo = _make_photo(planting.id, storage_key="photos/never-written.png")
     db_session.add(photo)
     db_session.commit()
 

@@ -1,10 +1,8 @@
 """Tests for the `Photo` model and its migration (backend/app/models/photo.py).
 
-See docs/architecture.md §4.3/§4.4 for the columns this model implements: a
-single `geometry(Point, 4326)` `location` column (not loose `latitude`/
-`longitude` floats) so "which region contains this photo?" can reuse the same
-GiST index the regions already use, plus a `status` CHECK that lets an
-organizer pull a photo offline with a single `UPDATE`.
+`Photo.planting_id` replaces `region_id` — see
+docs/superpowers/specs/2026-08-30-region-planting-pivot-design.md: fotos
+belong to an individual Planting, never directly to a Region.
 """
 
 import uuid
@@ -16,28 +14,33 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.photo import Photo
+from app.models.planting import Planting
 from app.models.region import Region
 
-_POLYGON_WKT = (
-    "POLYGON((-43.3130 -21.8845, -43.3125 -21.8845, "
-    "-43.3125 -21.8840, -43.3130 -21.8840, -43.3130 -21.8845))"
-)
 _POINT_WKT = "POINT(-43.3127 -21.8843)"
 
 
-def _make_region(**overrides: object) -> Region:
-    defaults: dict[str, object] = {
-        "slug": f"canteiro-{uuid.uuid4().hex[:8]}",
-        "name": "Canteiro de teste",
-        "geom": WKTElement(_POLYGON_WKT, srid=4326),
-    }
-    defaults.update(overrides)
-    return Region(**defaults)
+def _add_region(db_session: Session) -> Region:
+    region = Region(
+        slug=f"regiao-{uuid.uuid4().hex[:8]}",
+        name="Região de teste",
+        geom=WKTElement(_POINT_WKT, srid=4326),
+    )
+    db_session.add(region)
+    db_session.flush()
+    return region
 
 
-def _make_photo(region_id: uuid.UUID, **overrides: object) -> Photo:
+def _add_planting(db_session: Session, region_id: uuid.UUID) -> Planting:
+    planting = Planting(region_id=region_id, geom=WKTElement(_POINT_WKT, srid=4326))
+    db_session.add(planting)
+    db_session.flush()
+    return planting
+
+
+def _make_photo(planting_id: uuid.UUID, **overrides: object) -> Photo:
     defaults: dict[str, object] = {
-        "region_id": region_id,
+        "planting_id": planting_id,
         "storage_key": f"photos/{uuid.uuid4().hex}.jpg",
         "content_type": "image/jpeg",
         "byte_size": 123_456,
@@ -49,11 +52,10 @@ def _make_photo(region_id: uuid.UUID, **overrides: object) -> Photo:
 
 
 def test_photo_is_created_with_location_null(db_session: Session) -> None:
-    region = _make_region()
-    db_session.add(region)
-    db_session.flush()
+    region = _add_region(db_session)
+    planting = _add_planting(db_session, region.id)
 
-    photo = _make_photo(region.id)
+    photo = _make_photo(planting.id)
     db_session.add(photo)
     db_session.commit()
 
@@ -63,11 +65,10 @@ def test_photo_is_created_with_location_null(db_session: Session) -> None:
 
 
 def test_photo_accepts_a_valid_point_location(db_session: Session) -> None:
-    region = _make_region()
-    db_session.add(region)
-    db_session.flush()
+    region = _add_region(db_session)
+    planting = _add_planting(db_session, region.id)
 
-    photo = _make_photo(region.id, location=WKTElement(_POINT_WKT, srid=4326))
+    photo = _make_photo(planting.id, location=WKTElement(_POINT_WKT, srid=4326))
     db_session.add(photo)
     db_session.commit()
 
@@ -76,11 +77,10 @@ def test_photo_accepts_a_valid_point_location(db_session: Session) -> None:
 
 
 def test_invalid_status_is_rejected_by_check_constraint(db_session: Session) -> None:
-    region = _make_region()
-    db_session.add(region)
-    db_session.flush()
+    region = _add_region(db_session)
+    planting = _add_planting(db_session, region.id)
 
-    photo = _make_photo(region.id, status="deleted")
+    photo = _make_photo(planting.id, status="deleted")
     db_session.add(photo)
 
     with pytest.raises(IntegrityError):
@@ -89,11 +89,10 @@ def test_invalid_status_is_rejected_by_check_constraint(db_session: Session) -> 
 
 
 def test_hidden_status_is_accepted_by_check_constraint(db_session: Session) -> None:
-    region = _make_region()
-    db_session.add(region)
-    db_session.flush()
+    region = _add_region(db_session)
+    planting = _add_planting(db_session, region.id)
 
-    photo = _make_photo(region.id, status="hidden")
+    photo = _make_photo(planting.id, status="hidden")
     db_session.add(photo)
     db_session.commit()
 
@@ -101,14 +100,13 @@ def test_hidden_status_is_accepted_by_check_constraint(db_session: Session) -> N
     assert stored.status == "hidden"
 
 
-def test_deleting_region_cascades_to_its_photos_at_the_database_level(
+def test_deleting_planting_cascades_to_its_photos_at_the_database_level(
     db_session: Session,
 ) -> None:
-    region = _make_region()
-    db_session.add(region)
-    db_session.flush()
+    region = _add_region(db_session)
+    planting = _add_planting(db_session, region.id)
 
-    photo = _make_photo(region.id)
+    photo = _make_photo(planting.id)
     db_session.add(photo)
     db_session.commit()
     photo_id = photo.id
@@ -116,7 +114,7 @@ def test_deleting_region_cascades_to_its_photos_at_the_database_level(
     # Deleted via the Core `DELETE` the ORM issues for `db_session.delete`,
     # not via any ORM-side `cascade=` — this proves the `ON DELETE CASCADE`
     # is enforced by Postgres itself, not just by SQLAlchemy bookkeeping.
-    db_session.delete(region)
+    db_session.delete(planting)
     db_session.commit()
 
     remaining = db_session.execute(select(Photo).where(Photo.id == photo_id)).scalar_one_or_none()

@@ -3,7 +3,7 @@ import { useUploadPhoto } from '../../hooks/useUploadPhoto.ts'
 import { ApiError } from '../../services/apiClient.ts'
 
 interface PhotoUploadFormProps {
-  slug: string
+  plantingId: string
 }
 
 // The genuinely generic "network failed" case — an `ApiError` (the only
@@ -16,7 +16,7 @@ const FALLBACK_ERROR_MESSAGE = 'Não foi possível enviar a foto. Tente novament
  * one-handed, submitting a photo in a few taps. Kept to exactly the fields
  * the issue asks for — no multi-step flow, nothing optional made
  * required — since every extra field/step works against that goal. */
-function PhotoUploadForm({ slug }: PhotoUploadFormProps) {
+function PhotoUploadForm({ plantingId }: PhotoUploadFormProps) {
   const [file, setFile] = useState<File | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [contributorName, setContributorName] = useState('')
@@ -33,7 +33,7 @@ function PhotoUploadForm({ slug }: PhotoUploadFormProps) {
   const shareLocationFieldId = `${formId}-share-location`
   const shareLocationHintId = `${formId}-share-location-hint`
 
-  const { mutate, isPending, isError, error, reset } = useUploadPhoto(slug)
+  const { mutate, isPending, isError, error, reset } = useUploadPhoto(plantingId)
 
   // Revoked on every file change and on unmount — an object URL otherwise
   // keeps its backing blob alive in memory for the page's whole lifetime.

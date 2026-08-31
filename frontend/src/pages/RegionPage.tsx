@@ -81,7 +81,7 @@ function RegionPage() {
         <PlantingMap className="h-full" center={regionCenter(data)} />
       </div>
 
-      <PhotoUploadForm slug={slug ?? ''} />
+      <PhotoUploadForm plantingId={slug ?? ''} />
 
       <div className="mt-4 flex flex-col gap-3">
         <h2 className="text-xl font-bold text-emerald-700">Fotos</h2>

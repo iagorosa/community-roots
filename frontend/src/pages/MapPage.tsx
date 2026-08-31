@@ -1,12 +1,19 @@
 import type { ReactNode } from 'react'
 import { useMemo } from 'react'
+import { useSearchParams } from 'react-router'
 import EmptyState from '../components/feedback/EmptyState.tsx'
 import ErrorState from '../components/feedback/ErrorState.tsx'
 import LoadingState from '../components/feedback/LoadingState.tsx'
 import PlantingMap from '../components/map/PlantingMap.tsx'
+import PlantingClusterLayer from '../components/map/PlantingClusterLayer.tsx'
 import RegionLayer from '../components/map/RegionLayer.tsx'
+import PlantingDetailDrawer from '../components/plantings/PlantingDetailDrawer.tsx'
+import PlantingDetailPanel from '../components/plantings/PlantingDetailPanel.tsx'
+import { usePlantings } from '../hooks/usePlantings.ts'
 import { useRegions } from '../hooks/useRegions.ts'
 import { regionsBounds } from '../utils/geo.ts'
+
+const PLANTING_PARAM = 'planting'
 
 /** Shared chrome for every state below — full-height flex column
  * (docs/architecture.md §2.2/§8) with the page heading, so the heading
@@ -22,14 +29,42 @@ function MapPageShell({ children }: { children: ReactNode }) {
 }
 
 /**
- * `PlantingMap` (issue #16) + `RegionLayer` (issue #17), now wired to real
- * loading/error/empty feedback (issue #18): a dead backend renders
- * `ErrorState`, not a blank page, and the map fits its viewport to the
- * fetched canteiros' bounding box on load.
+ * `PlantingMap` + `RegionLayer` (region boundaries) + `PlantingClusterLayer`
+ * (individual mudas, clustered). Clicking a pin — or landing on `/mapa` with
+ * `?planting=<id>` already set (`QrRedirectPage`, issue #97, does this for a
+ * scanned Planting QR code) — opens `PlantingDetailDrawer`.
  */
 function MapPage() {
-  const { data, isPending, isError } = useRegions()
-  const bounds = useMemo(() => (data ? regionsBounds(data) : undefined), [data])
+  const { data: regions, isPending, isError } = useRegions()
+  // `plantings`'s own `isPending`/`isError` are deliberately unchecked: a
+  // failed or slow Plantings fetch degrades to a region-only map (no pins)
+  // rather than blocking the page on a secondary layer — mirroring the
+  // `isError` tradeoff above, applied to the less critical dataset.
+  const { data: plantings } = usePlantings()
+  const bounds = useMemo(() => (regions ? regionsBounds(regions) : undefined), [regions])
+
+  const [searchParams, setSearchParams] = useSearchParams()
+  const selectedPlantingId = searchParams.get(PLANTING_PARAM)
+
+  function openPlanting(plantingId: string) {
+    setSearchParams(
+      (params) => {
+        params.set(PLANTING_PARAM, plantingId)
+        return params
+      },
+      { replace: true },
+    )
+  }
+
+  function closeDrawer() {
+    setSearchParams(
+      (params) => {
+        params.delete(PLANTING_PARAM)
+        return params
+      },
+      { replace: true },
+    )
+  }
 
   if (isPending) {
     return (
@@ -55,7 +90,7 @@ function MapPage() {
     )
   }
 
-  if (data.features.length === 0) {
+  if (regions.features.length === 0) {
     return (
       <MapPageShell>
         <EmptyState message="Nenhum canteiro cadastrado ainda." />
@@ -66,8 +101,13 @@ function MapPage() {
   return (
     <MapPageShell>
       <PlantingMap className="flex-1" bounds={bounds}>
-        <RegionLayer data={data} />
+        <RegionLayer data={regions} />
+        {plantings && <PlantingClusterLayer data={plantings} onSelect={openPlanting} />}
       </PlantingMap>
+
+      <PlantingDetailDrawer open={selectedPlantingId !== null} onClose={closeDrawer}>
+        {selectedPlantingId && <PlantingDetailPanel plantingId={selectedPlantingId} />}
+      </PlantingDetailDrawer>
     </MapPageShell>
   )
 }

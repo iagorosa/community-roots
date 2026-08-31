@@ -1,13 +1,12 @@
-"""Tests for `scripts/seed.py` (issue #13): idempotent development seed data.
-
-architecture.md §4.1: the seeded geometry is a development placeholder,
-replaced by the geographer's real survey in Phase 6.
-"""
+"""Tests for `scripts/seed.py`: idempotent development seed data — Regions
+with nested Plantings. See
+docs/superpowers/specs/2026-08-30-region-planting-pivot-design.md."""
 
 import pytest
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.models.planting import Planting
 from app.models.qr_code import QrCode
 from app.models.region import Region
 from scripts.seed import _grid_cell_centers, seed
@@ -20,10 +19,46 @@ def _region_count(db: Session) -> int:
     return db.execute(select(func.count()).select_from(Region)).scalar_one()
 
 
+def _planting_count(db: Session) -> int:
+    return db.execute(select(func.count()).select_from(Planting)).scalar_one()
+
+
 def test_seed_creates_the_configured_number_of_regions(db_session: Session) -> None:
     seed(db_session, center_lat=_CENTER_LAT, center_lon=_CENTER_LON, region_count=10)
 
     assert _region_count(db_session) == 10
+
+
+def test_seed_creates_plantings_inside_each_region(db_session: Session) -> None:
+    seed(
+        db_session,
+        center_lat=_CENTER_LAT,
+        center_lon=_CENTER_LON,
+        region_count=10,
+        plantings_per_region=3,
+    )
+
+    assert _planting_count(db_session) == 30
+    first_region_id = db_session.execute(
+        select(Region.id).order_by(Region.slug).limit(1)
+    ).scalar_one()
+    plantings_in_first_region = db_session.execute(
+        select(func.count()).select_from(Planting).where(Planting.region_id == first_region_id)
+    ).scalar_one()
+    assert plantings_in_first_region == 3
+
+
+def test_seed_gives_every_region_and_planting_a_qr_code(db_session: Session) -> None:
+    seed(db_session, center_lat=_CENTER_LAT, center_lon=_CENTER_LON, region_count=10)
+
+    region_qr_count = db_session.execute(
+        select(func.count()).select_from(QrCode).where(QrCode.region_id.is_not(None))
+    ).scalar_one()
+    planting_qr_count = db_session.execute(
+        select(func.count()).select_from(QrCode).where(QrCode.planting_id.is_not(None))
+    ).scalar_one()
+    assert region_qr_count == 10
+    assert planting_qr_count == _planting_count(db_session)
 
 
 def test_seed_is_idempotent(db_session: Session) -> None:
@@ -31,6 +66,7 @@ def test_seed_is_idempotent(db_session: Session) -> None:
     seed(db_session, center_lat=_CENTER_LAT, center_lon=_CENTER_LON, region_count=10)
 
     assert _region_count(db_session) == 10
+    assert _planting_count(db_session) == 10 * 4  # default plantings_per_region — no duplicates
 
 
 def test_seed_documents_the_placeholder_geometry_in_the_description(db_session: Session) -> None:

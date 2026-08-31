@@ -106,8 +106,13 @@ significado.
   `GET .../qr-code` passa a existir tanto em
   `/api/regions/{id}/qr-code` quanto em `/api/plantings/{id}/qr-code`,
   ambos usando o `qr_service` compartilhado.
-- `GET /api/regions/{id}` deixa de retornar fotos; passa a retornar a
-  lista de plantings da região (com contagem, para a sidebar).
+- `GET /api/regions/{id}` deixa de retornar fotos; passa a retornar
+  `planting_count` (contagem real de plantings ativas na região, para a
+  sidebar). A lista completa de plantings de uma região é obtida à parte,
+  via `GET /api/plantings?region_id={id}` — endpoint dedicado, em vez de
+  embutir a lista na resposta de Region, mantendo cada resposta enxuta e
+  evitando duplicar a lógica de consulta de `planting_service` dentro de
+  `region_service`.
 
 ## Frontend
 

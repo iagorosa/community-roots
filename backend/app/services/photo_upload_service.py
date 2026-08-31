@@ -1,7 +1,8 @@
 """Photo upload: the write side of the photo timeline — `POST
-/api/regions/{region}/photos` (issue #28), the endpoint that finally calls
-every piece issues #20-#27 built (`Photo`, storage, upload validation, EXIF/
-privacy extraction) but never wired to a write path.
+/api/plantings/{planting_id}/photos` (issue #28, migrated from `region_id`
+to `planting_id` by issue #85), the endpoint that finally calls every piece
+issues #20-#27 built (`Photo`, storage, upload validation, EXIF/privacy
+extraction) but never wired to a write path.
 
 Kept in its own module rather than folded into `photo_service.py`, even
 though `region_service.py` shows the opposite precedent (one file, both
@@ -24,7 +25,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.models.photo import Photo
 from app.schemas.photo import PhotoOut
-from app.services import region_service
+from app.services import planting_service
 from app.services.exif_processing import process_photo_metadata
 from app.services.image_processing import validate_upload
 from app.storage.base import StorageBackend
@@ -66,30 +67,28 @@ def _extension_for_content_type(content_type: str) -> str:
 def upload_photo(
     db: Session,
     storage: StorageBackend,
-    region_identifier: str,
+    planting_id: uuid.UUID,
     *,
     file: UploadFile,
     description: str | None,
     contributor_name: str | None,
     share_location: bool,
 ) -> PhotoOut:
-    """Validate, store and record a new photo for the region
-    `region_identifier` resolves to.
+    """Validate, store and record a new photo for `planting_id`.
 
-    Propagates `region_service.RegionNotFound`, `image_processing.
+    Propagates `planting_service.PlantingNotFound`, `image_processing.
     ImageTooLarge` and `image_processing.InvalidImage` unchanged — all
     `AppError` subclasses `app.core.errors.register_error_handlers` already
     translates into a structured `{"detail", "code"}` response, so none of
     them are caught here.
     """
-    region = region_service.get_region(db, region_identifier)
-    region_id = uuid.UUID(region.id)
+    planting_service.get_planting(db, planting_id)  # raises PlantingNotFound if missing
 
     image = validate_upload(file.file, max_bytes=settings.max_upload_bytes)
     metadata = process_photo_metadata(image, share_location=share_location)
 
     extension = _extension_for_content_type(metadata.content_type)
-    storage_key = generate_storage_key(region_id, extension=extension)
+    storage_key = generate_storage_key(planting_id, extension=extension)
     storage.save(storage_key, io.BytesIO(metadata.image_bytes), metadata.content_type)
 
     location = None
@@ -97,7 +96,7 @@ def upload_photo(
         location = WKTElement(f"POINT({metadata.longitude} {metadata.latitude})", srid=4326)
 
     photo = Photo(
-        region_id=region_id,
+        planting_id=planting_id,
         storage_key=storage_key,
         original_filename=file.filename,
         content_type=metadata.content_type,

@@ -1,4 +1,4 @@
-"""`Photo` — a photo uploaded to a region's timeline. See docs/architecture.md §4.3/§4.4."""
+"""`Photo` — a photo uploaded to a Planting's photo timeline. See docs/architecture.md §4.3/§4.4."""
 
 import uuid
 from datetime import datetime
@@ -15,9 +15,9 @@ from app.db.base import Base, UUIDPrimaryKeyMixin
 class Photo(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "photos"
 
-    region_id: Mapped[uuid.UUID] = mapped_column(
+    planting_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("regions.id", ondelete="CASCADE"),
+        ForeignKey("plantings.id", ondelete="CASCADE"),
         nullable=False,
     )
 
@@ -71,14 +71,14 @@ class Photo(UUIDPrimaryKeyMixin, Base):
             "status IN ('published', 'hidden')",
             name="ck_photos_status",
         ),
-        # `region_id` leads this composite index, so it also serves plain
-        # `WHERE region_id = ...` lookups (e.g. the FK) without a second,
+        # `planting_id` leads this composite index, so it also serves plain
+        # `WHERE planting_id = ...` lookups (e.g. the FK) without a second,
         # redundant single-column index.
         #
         # The timeline query orders by `uploaded_at DESC`, so the index is
         # built with that same direction (`.desc()`) rather than the default
         # ascending — that's what lets the planner walk it without an extra
         # `Sort` step.
-        Index("ix_photos_region_id_uploaded_at", region_id, uploaded_at.desc()),
+        Index("ix_photos_planting_id_uploaded_at", planting_id, uploaded_at.desc()),
         Index("ix_photos_location", location, postgresql_using="gist"),
     )

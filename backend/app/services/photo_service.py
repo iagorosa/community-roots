@@ -1,7 +1,7 @@
-"""A region's photo timeline: listing with keyset pagination. See
+"""A planting's photo timeline: listing with keyset pagination. See
 docs/architecture.md §4.3/§4.4 for the `photos` table and the
-location-derivation decision, and §5 for the `GET /api/regions/{region}/photos`
-contract.
+location-derivation decision, and §5 for the
+`GET /api/plantings/{planting_id}/photos` contract.
 """
 
 import base64
@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from app.core.errors import NotFoundError, ValidationFailedError
 from app.models.photo import Photo
 from app.schemas.photo import PhotoOut, PhotoPage
-from app.services import region_service
+from app.services import planting_service
 from app.storage.base import StorageBackend
 
 # architecture.md §4.5: `status` exists so an organizer can pull a photo
@@ -72,20 +72,21 @@ def _decode_cursor(cursor: str) -> tuple[datetime, uuid.UUID]:
         raise InvalidCursor(cursor) from exc
 
 
-def list_region_photos(
+def list_planting_photos(
     db: Session,
-    identifier: str,
+    planting_id: uuid.UUID,
     *,
     cursor: str | None = None,
     limit: int = DEFAULT_PAGE_SIZE,
 ) -> PhotoPage:
-    """List `published` photos of the region `identifier` resolves to,
-    most-recently-uploaded first.
+    """List `published` photos of `planting_id`, most-recently-uploaded first.
 
-    Raises `region_service.RegionNotFound` (a `NotFoundError`) if
-    `identifier` doesn't resolve — `region_service.get_region` is reused
-    rather than re-implementing the UUID-or-slug resolution, so there is
-    still exactly one place that logic lives (architecture.md §5).
+    Raises `planting_service.PlantingNotFound` (a `NotFoundError`) if
+    `planting_id` doesn't resolve to a visible planting —
+    `planting_service.get_planting` is reused rather than re-implementing
+    the lookup, so there is still exactly one place that logic lives
+    (architecture.md §5). Unlike `Region`, a `Planting` has no slug: the
+    identifier here is a plain UUID.
 
     **Why keyset, not page/offset, pagination.** The listing orders by
     `uploaded_at DESC` on a table that receives inserts constantly — new
@@ -101,11 +102,10 @@ def list_region_photos(
     lands ahead of everything already returned — cannot move a boundary the
     client has already crossed. `id` breaks ties because `uploaded_at`
     alone isn't unique (same-second uploads), and the composite matches the
-    `ix_photos_region_id_uploaded_at` index's leading columns, so the
+    `ix_photos_planting_id_uploaded_at` index's leading columns, so the
     predicate is served by that index rather than a sequential scan.
     """
-    region = region_service.get_region(db, identifier)
-    region_id = uuid.UUID(region.id)
+    planting_service.get_planting(db, planting_id)  # raises PlantingNotFound if missing
 
     page_size = min(max(limit, 1), MAX_PAGE_SIZE)
 
@@ -121,7 +121,7 @@ def list_region_photos(
             func.ST_Y(Photo.location).label("latitude"),
             func.ST_X(Photo.location).label("longitude"),
         )
-        .where(Photo.region_id == region_id, _PUBLICLY_VISIBLE)
+        .where(Photo.planting_id == planting_id, _PUBLICLY_VISIBLE)
         .order_by(Photo.uploaded_at.desc(), Photo.id.desc())
         # One extra row past `page_size` is the cheapest way to know
         # whether another page exists, without a second COUNT query.
@@ -165,12 +165,14 @@ def open_photo_file(
     """Resolve `photo_id` to an open file handle and its content type, for
     `GET /api/photos/{photo_id}/file` (architecture.md §5.2).
 
-    Reuses `_PUBLICLY_VISIBLE` — the same rule `list_region_photos` applies —
-    rather than only checking existence: `region_service.get_region` already
-    sets the precedent that `hidden`/`archived` fully removes a row from every
-    public read path, not just listings (its `_PUBLICLY_VISIBLE` filters
-    `get_region` too, not only `list_regions`). A `hidden` photo follows the
-    same rule here: architecture.md's rationale for `status` is letting an
+    Reuses `_PUBLICLY_VISIBLE` — the same rule `list_planting_photos` applies —
+    rather than only checking existence: `region_service.get_region` (and,
+    equivalently, `planting_service.get_planting`) already sets the precedent
+    that `hidden`/`archived` fully removes a row from every public read path,
+    not just listings (its `_PUBLICLY_VISIBLE` filters `get_region`/
+    `get_planting` too, not only the listing functions). A `hidden` photo
+    follows the same rule here: architecture.md's rationale for `status` is
+    letting an
     organizer "pull a photo offline with a single UPDATE", which reads as
     taking it down entirely, not just delisting it while a direct link still
     works — the more conservative reading, given this product's photos are

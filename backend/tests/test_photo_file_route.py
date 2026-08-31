@@ -14,6 +14,7 @@ from geoalchemy2.elements import WKTElement
 from sqlalchemy.orm import Session
 
 from app.models.photo import Photo
+from app.models.planting import Planting
 from app.models.region import Region
 from app.storage.dependency import get_storage_backend
 from app.storage.local import LocalFilesystemStorage
@@ -40,9 +41,18 @@ def _make_region(**overrides: object) -> Region:
     return Region(**defaults)
 
 
-def _make_photo(region_id: object, **overrides: object) -> Photo:
+def _make_planting(region_id: object, **overrides: object) -> Planting:
     defaults: dict[str, object] = {
         "region_id": region_id,
+        "geom": WKTElement("POINT(-43.3127 -21.8843)", srid=4326),
+    }
+    defaults.update(overrides)
+    return Planting(**defaults)
+
+
+def _make_photo(planting_id: object, **overrides: object) -> Photo:
+    defaults: dict[str, object] = {
+        "planting_id": planting_id,
         "storage_key": _SECRET_STORAGE_KEY,
         "content_type": "image/png",
         "byte_size": len(_FAKE_PNG_BYTES),
@@ -83,7 +93,10 @@ def test_serves_the_file_with_the_stored_content_type_and_an_immutable_cache_con
     region = _make_region()
     db_session.add(region)
     db_session.flush()
-    photo = _make_photo(region.id)
+    planting = _make_planting(region.id)
+    db_session.add(planting)
+    db_session.flush()
+    photo = _make_photo(planting.id)
     db_session.add(photo)
     db_session.commit()
     _write_photo_file(storage_root, photo.storage_key)
@@ -111,7 +124,10 @@ def test_returns_404_for_a_hidden_photo(
     region = _make_region()
     db_session.add(region)
     db_session.flush()
-    photo = _make_photo(region.id, status="hidden")
+    planting = _make_planting(region.id)
+    db_session.add(planting)
+    db_session.flush()
+    photo = _make_photo(planting.id, status="hidden")
     db_session.add(photo)
     db_session.commit()
     _write_photo_file(storage_root, photo.storage_key)
@@ -128,7 +144,10 @@ def test_returns_404_when_the_row_exists_but_the_file_is_missing_from_storage(
     region = _make_region()
     db_session.add(region)
     db_session.flush()
-    photo = _make_photo(region.id)
+    planting = _make_planting(region.id)
+    db_session.add(planting)
+    db_session.flush()
+    photo = _make_photo(planting.id)
     db_session.add(photo)
     db_session.commit()
     # Deliberately not writing the file to `storage_root`.
@@ -145,7 +164,10 @@ def test_response_never_contains_the_storage_key_in_body_or_headers(
     region = _make_region()
     db_session.add(region)
     db_session.flush()
-    photo = _make_photo(region.id)
+    planting = _make_planting(region.id)
+    db_session.add(planting)
+    db_session.flush()
+    photo = _make_photo(planting.id)
     db_session.add(photo)
     db_session.commit()
     _write_photo_file(storage_root, photo.storage_key)

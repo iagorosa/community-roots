@@ -1,7 +1,7 @@
 """Photo response schemas: the timeline listing at
-`GET /api/regions/{region}/photos`. See docs/architecture.md §4.3/§4.4 for
-the columns this derives from and §5.2 for why `storage_key` never leaves the
-backend.
+`GET /api/plantings/{planting_id}/photos`. See docs/architecture.md §4.3/§4.4
+for the columns this derives from and §5.2 for why `storage_key` never leaves
+the backend.
 """
 
 import uuid
@@ -11,7 +11,7 @@ from pydantic import BaseModel, computed_field
 
 
 class PhotoOut(BaseModel):
-    """A single photo in a region's timeline.
+    """A single photo in a planting's timeline.
 
     `latitude`/`longitude` are derived from the `location` PostGIS column at
     query time (architecture.md §4.4) — never the raw geometry, and never
@@ -44,10 +44,10 @@ class PhotoOut(BaseModel):
 
 
 class PhotoPage(BaseModel):
-    """Paginated response for `GET /api/regions/{region}/photos`.
+    """Paginated response for `GET /api/plantings/{planting_id}/photos`.
 
     Keyset (not offset) pagination — see
-    `app.services.photo_service.list_region_photos` for why. `next_cursor`
+    `app.services.photo_service.list_planting_photos` for why. `next_cursor`
     is `None` once there is nothing more to fetch; callers should stop on
     that, not on `len(items) < limit`, since a full page can still be the
     last one.

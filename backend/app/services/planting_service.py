@@ -10,10 +10,11 @@ import json
 import uuid
 from typing import Any
 
-from sqlalchemy import ColumnElement, Row, func, literal, select
+from sqlalchemy import ColumnElement, Row, func, select
 from sqlalchemy.orm import Session
 
 from app.core.errors import NotFoundError, ValidationFailedError
+from app.models.photo import Photo
 from app.models.planting import Planting
 from app.models.qr_code import QrCode
 from app.models.region import Region
@@ -43,10 +44,24 @@ def _planting_feature_columns() -> tuple[ColumnElement[Any], ...]:
     creation time (`qr_code_service.create_planting_qr_code`), same
     invariant `region_service._region_feature_columns` documents.
 
-    `photo_count`/`latest_photo_at` are literal placeholders until a later
-    task wires them to real `photos` data (that table doesn't reference
-    `planting_id` yet at this point in the plan).
+    `photo_count`/`latest_photo_at` are correlated scalar subqueries against
+    `photos.planting_id` (same technique `region_service` used for
+    `planting_count` before Photo moved off `Region` entirely) — only
+    `published` photos count, matching `photo_service._PUBLICLY_VISIBLE`: a
+    `hidden` photo must not inflate the count an organizer/visitor sees.
     """
+    photo_count = (
+        select(func.count())
+        .select_from(Photo)
+        .where(Photo.planting_id == Planting.id, Photo.status == "published")
+        .scalar_subquery()
+    )
+    latest_photo_at = (
+        select(func.max(Photo.uploaded_at))
+        .select_from(Photo)
+        .where(Photo.planting_id == Planting.id, Photo.status == "published")
+        .scalar_subquery()
+    )
     return (
         Planting.id,
         Planting.region_id,
@@ -59,8 +74,8 @@ def _planting_feature_columns() -> tuple[ColumnElement[Any], ...]:
         Planting.updated_at,
         QrCode.token.label("qr_token"),
         func.ST_AsGeoJSON(Planting.geom).label("geometry_geojson"),
-        literal(0).label("photo_count"),
-        literal(None).label("latest_photo_at"),
+        photo_count.label("photo_count"),
+        latest_photo_at.label("latest_photo_at"),
     )
 
 

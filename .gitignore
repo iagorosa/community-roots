@@ -31,3 +31,6 @@ backend/storage/
 htmlcov/
 .coverage
 coverage/
+
+# Superpowers brainstorming companion
+.superpowers/

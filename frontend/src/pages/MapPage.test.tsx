@@ -144,6 +144,14 @@ describe('MapPage', () => {
     await waitFor(() => expect(screen.getByText('Ipê-amarelo')).toBeInTheDocument())
   })
 
+  it('renders the region sidebar alongside the map', async () => {
+    stubFetch({ regions: SAMPLE_REGIONS, plantings: SAMPLE_PLANTINGS })
+
+    renderMapPage()
+
+    await waitFor(() => expect(screen.getByText('Canteiro do Ipê')).toBeInTheDocument())
+  })
+
   it('keeps the page heading visible in every state', async () => {
     stubFetch({ regions: SAMPLE_REGIONS, plantings: SAMPLE_PLANTINGS })
 

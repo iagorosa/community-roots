@@ -7,6 +7,7 @@ import LoadingState from '../components/feedback/LoadingState.tsx'
 import PlantingMap from '../components/map/PlantingMap.tsx'
 import PlantingClusterLayer from '../components/map/PlantingClusterLayer.tsx'
 import RegionLayer from '../components/map/RegionLayer.tsx'
+import RegionSidebar from '../components/map/RegionSidebar.tsx'
 import PlantingDetailDrawer from '../components/plantings/PlantingDetailDrawer.tsx'
 import PlantingDetailPanel from '../components/plantings/PlantingDetailPanel.tsx'
 import { usePlantings } from '../hooks/usePlantings.ts'
@@ -30,9 +31,11 @@ function MapPageShell({ children }: { children: ReactNode }) {
 
 /**
  * `PlantingMap` + `RegionLayer` (region boundaries) + `PlantingClusterLayer`
- * (individual mudas, clustered). Clicking a pin — or landing on `/mapa` with
- * `?planting=<id>` already set (`QrRedirectPage`, issue #97, does this for a
- * scanned Planting QR code) — opens `PlantingDetailDrawer`.
+ * (individual mudas, clustered), with `RegionSidebar` layered on top for
+ * name search and per-region planting counts. Clicking a pin — or landing
+ * on `/mapa` with `?planting=<id>` already set (`QrRedirectPage`, issue
+ * #97, does this for a scanned Planting QR code) — opens
+ * `PlantingDetailDrawer`.
  */
 function MapPage() {
   const { data: regions, isPending, isError } = useRegions()
@@ -100,10 +103,13 @@ function MapPage() {
 
   return (
     <MapPageShell>
-      <PlantingMap className="flex-1" bounds={bounds}>
-        <RegionLayer data={regions} />
-        {plantings && <PlantingClusterLayer data={plantings} onSelect={openPlanting} />}
-      </PlantingMap>
+      <div className="relative flex-1">
+        <PlantingMap className="h-full" bounds={bounds}>
+          <RegionLayer data={regions} />
+          {plantings && <PlantingClusterLayer data={plantings} onSelect={openPlanting} />}
+        </PlantingMap>
+        <RegionSidebar regions={regions} />
+      </div>
 
       <PlantingDetailDrawer open={selectedPlantingId !== null} onClose={closeDrawer}>
         {selectedPlantingId && <PlantingDetailPanel plantingId={selectedPlantingId} />}

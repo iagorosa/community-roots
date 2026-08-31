@@ -9,6 +9,7 @@ from geoalchemy2.elements import WKTElement
 from sqlalchemy import event
 from sqlalchemy.orm import Session
 
+from app.models.planting import Planting
 from app.models.qr_code import QrCode
 from app.models.region import Region
 from app.services import region_service
@@ -37,6 +38,15 @@ def _add_region(db_session: Session, **overrides: object) -> Region:
     return region
 
 
+def _add_planting(db_session: Session, region_id: uuid.UUID, **overrides: object) -> Planting:
+    defaults: dict[str, object] = {"region_id": region_id, "geom": WKTElement(_POINT_A, srid=4326)}
+    defaults.update(overrides)
+    planting = Planting(**defaults)
+    db_session.add(planting)
+    db_session.flush()
+    return planting
+
+
 def test_list_regions_returns_a_valid_feature_collection(db_session: Session) -> None:
     _add_region(db_session)
     _add_region(
@@ -51,18 +61,31 @@ def test_list_regions_returns_a_valid_feature_collection(db_session: Session) ->
     assert names == ["Canteiro A", "Canteiro B"]  # ordered by name
 
 
-def test_list_regions_serializes_geometry_and_default_photo_fields(db_session: Session) -> None:
-    _add_region(db_session)
+def test_list_regions_serializes_geometry_and_planting_count(db_session: Session) -> None:
+    region = _add_region(db_session)
+    db_session.commit()
+    _add_planting(db_session, region.id)
+    _add_planting(db_session, region.id, geom=WKTElement(_POINT_B, srid=4326))
     db_session.commit()
 
     [feature] = region_service.list_regions(db_session).features
 
     assert feature.geometry.type == "Point"
     assert feature.geometry.coordinates == pytest.approx((-43.3130, -21.8845))
-    # `photos` doesn't exist until issue #20 (milestone "Fase 4") — literal
-    # placeholders until then, see region_service.py.
-    assert feature.properties.photo_count == 0
-    assert feature.properties.latest_photo_at is None
+    assert feature.properties.planting_count == 2
+
+
+def test_list_regions_planting_count_excludes_draft_and_archived(db_session: Session) -> None:
+    region = _add_region(db_session)
+    db_session.commit()
+    _add_planting(db_session, region.id)
+    _add_planting(db_session, region.id, status="draft")
+    _add_planting(db_session, region.id, status="archived")
+    db_session.commit()
+
+    [feature] = region_service.list_regions(db_session).features
+
+    assert feature.properties.planting_count == 1
 
 
 def test_list_regions_runs_a_single_query(db_session: Session) -> None:

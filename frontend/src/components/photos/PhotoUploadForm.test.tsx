@@ -78,7 +78,7 @@ describe('PhotoUploadForm', () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
     const [path, init] = fetchMock.mock.calls[0] as [string, RequestInit]
-    expect(path).toBe('/api/regions/canteiro-do-ipe/photos')
+    expect(path).toBe('/api/plantings/canteiro-do-ipe/photos')
     expect(init.method).toBe('POST')
     expect(init.body).toBeInstanceOf(FormData)
   })

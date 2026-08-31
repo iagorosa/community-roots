@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { fetchRegionPhotos } from '../services/photos'
+import { fetchPlantingPhotos } from '../services/photos'
 
 // Fetches only the first page (the backend's default `limit`, currently
 // 20 — `backend/app/services/photo_service.py::DEFAULT_PAGE_SIZE`), with
@@ -12,6 +12,6 @@ import { fetchRegionPhotos } from '../services/photos'
 export function usePhotos(identifier: string) {
   return useQuery({
     queryKey: ['photos', identifier],
-    queryFn: () => fetchRegionPhotos(identifier),
+    queryFn: () => fetchPlantingPhotos(identifier),
   })
 }

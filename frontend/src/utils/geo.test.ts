@@ -6,8 +6,7 @@ const BASE_PROPERTIES = {
   description: null,
   status: 'active' as const,
   qr_token: 'k3Zq8xR2mNvA',
-  photo_count: 0,
-  latest_photo_at: null,
+  planting_count: 0,
   created_at: '2026-08-01T10:00:00Z',
   updated_at: '2026-08-01T10:00:00Z',
 }

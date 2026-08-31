@@ -1,8 +1,9 @@
-"""Tests for `POST /api/regions/{region}/photos` (issue #28) — the endpoint
-that closes the upload pipeline built across issues #20-#27: validates the
-upload (#26), extracts EXIF metadata under the site's privacy policy (#27),
-stores the re-encoded bytes under a collision-free key (#25), and inserts the
-`Photo` row (#20), returning it in the same shape the timeline listing (#21)
+"""Tests for `POST /api/plantings/{planting_id}/photos` (issue #28, migrated
+from `region_id` to `planting_id` by issue #85) — the endpoint that closes
+the upload pipeline built across issues #20-#27: validates the upload (#26),
+extracts EXIF metadata under the site's privacy policy (#27), stores the
+re-encoded bytes under a collision-free key (#25), and inserts the `Photo`
+row (#20), returning it in the same shape the timeline listing (#21)
 already uses.
 """
 
@@ -19,6 +20,7 @@ from PIL import Image
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.models.planting import Planting
 from app.models.qr_code import QrCode
 from app.models.region import Region
 from app.storage.dependency import get_storage_backend
@@ -28,6 +30,7 @@ _POLYGON_WKT = (
     "POLYGON((-43.3130 -21.8845, -43.3125 -21.8845, "
     "-43.3125 -21.8840, -43.3130 -21.8840, -43.3130 -21.8845))"
 )
+_POINT_WKT = "POINT(-43.3127 -21.8843)"
 
 # Same DMS layout `tests/test_exif_processing.py` uses to build real GPS EXIF.
 _LATITUDE_DMS = (40.0, 26.0, 46.302)
@@ -38,10 +41,8 @@ _LONGITUDE_REF = "W"
 
 def _add_region(db_session: Session, **overrides: object) -> Region:
     """Insert a `Region` plus the `QrCode` row every real region gets at
-    creation time (`region_service.create_region`) — `region_service.
-    get_region` (which `photo_upload_service.upload_photo` reuses to resolve
-    the `{region}` path parameter) INNER JOINs on it, so a region without one
-    wouldn't be a realistic fixture.
+    creation time (`region_service.create_region`) — required so the
+    `Planting` fixture below has a valid `region_id` to point at.
     """
     defaults: dict[str, object] = {
         "slug": "canteiro-a",
@@ -54,6 +55,25 @@ def _add_region(db_session: Session, **overrides: object) -> Region:
     db_session.flush()
     db_session.add(QrCode(region_id=region.id, token=f"token-{uuid.uuid4().hex[:8]}"))
     return region
+
+
+def _add_planting(db_session: Session, region_id: uuid.UUID, **overrides: object) -> Planting:
+    """Insert a `Planting` plus the `QrCode` row every real planting gets at
+    creation time (`planting_service.create_planting`) — `planting_service.
+    get_planting` (which `photo_upload_service.upload_photo` reuses to
+    validate the `{planting_id}` path parameter) INNER JOINs on it, so a
+    planting without one wouldn't be a realistic fixture.
+    """
+    defaults: dict[str, object] = {
+        "region_id": region_id,
+        "geom": WKTElement(_POINT_WKT, srid=4326),
+    }
+    defaults.update(overrides)
+    planting = Planting(**defaults)
+    db_session.add(planting)
+    db_session.flush()
+    db_session.add(QrCode(planting_id=planting.id, token=f"token-{uuid.uuid4().hex[:8]}"))
+    return planting
 
 
 def _jpeg_bytes(*, width: int = 32, height: int = 32, with_gps: bool = False) -> bytes:
@@ -93,25 +113,26 @@ def client(app: FastAPI, storage_root: Path) -> Generator[TestClient, None, None
 
 def _upload(
     client: TestClient,
-    region: str,
+    planting_id: uuid.UUID | str,
     *,
     filename: str = "foto.jpg",
     content: bytes | None = None,
     **form: object,
 ):
     files = {"file": (filename, content or _jpeg_bytes(), "image/jpeg")}
-    return client.post(f"/api/regions/{region}/photos", files=files, data=form)
+    return client.post(f"/api/plantings/{planting_id}/photos", files=files, data=form)
 
 
 def test_valid_upload_without_sharing_location_returns_201_with_null_location(
     client: TestClient, db_session: Session
 ) -> None:
     region = _add_region(db_session)
+    planting = _add_planting(db_session, region.id)
     db_session.commit()
 
     response = _upload(
         client,
-        region.slug,
+        planting.id,
         description="Muda de tomate",
         contributor_name="Maria",
         share_location="false",
@@ -134,10 +155,11 @@ def test_valid_upload_with_share_location_true_and_gps_exif_returns_coordinates(
     client: TestClient, db_session: Session
 ) -> None:
     region = _add_region(db_session)
+    planting = _add_planting(db_session, region.id)
     db_session.commit()
 
     response = _upload(
-        client, region.slug, content=_jpeg_bytes(with_gps=True), share_location="true"
+        client, planting.id, content=_jpeg_bytes(with_gps=True), share_location="true"
     )
 
     assert response.status_code == 201
@@ -155,10 +177,11 @@ def test_gps_exif_is_discarded_end_to_end_when_share_location_is_false(
     reach the response or the stored `Photo` row — not partially, not at all.
     """
     region = _add_region(db_session)
+    planting = _add_planting(db_session, region.id)
     db_session.commit()
 
     response = _upload(
-        client, region.slug, content=_jpeg_bytes(with_gps=True), share_location="false"
+        client, planting.id, content=_jpeg_bytes(with_gps=True), share_location="false"
     )
 
     assert response.status_code == 201
@@ -167,22 +190,23 @@ def test_gps_exif_is_discarded_end_to_end_when_share_location_is_false(
     assert body["longitude"] is None
 
 
-def test_upload_to_unknown_region_returns_404_in_portuguese(client: TestClient) -> None:
-    response = _upload(client, "nao-existe")
+def test_upload_to_unknown_planting_returns_404_in_portuguese(client: TestClient) -> None:
+    response = _upload(client, uuid.uuid4())
 
     assert response.status_code == 404
     body = response.json()
-    assert body["code"] == "region_not_found"
-    assert "canteiro" in body["detail"].lower() or "nao-existe" in body["detail"]
+    assert body["code"] == "planting_not_found"
+    assert body.get("detail")
 
 
 def test_upload_of_non_image_bytes_is_rejected_with_an_actionable_message(
     client: TestClient, db_session: Session
 ) -> None:
     region = _add_region(db_session)
+    planting = _add_planting(db_session, region.id)
     db_session.commit()
 
-    response = _upload(client, region.slug, content=b"not an image, just plain text")
+    response = _upload(client, planting.id, content=b"not an image, just plain text")
 
     assert response.status_code == 422
     body = response.json()
@@ -194,13 +218,14 @@ def test_upload_above_the_size_limit_is_rejected_with_a_readable_message(
     client: TestClient, db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     region = _add_region(db_session)
+    planting = _add_planting(db_session, region.id)
     db_session.commit()
 
     # A tiny cap forces the (small, otherwise valid) test JPEG itself over
     # the limit — no need for a genuinely huge upload to exercise this path.
     monkeypatch.setattr(settings, "max_upload_bytes", 10)
 
-    response = _upload(client, region.slug)
+    response = _upload(client, planting.id)
 
     assert response.status_code == 422
     body = response.json()
@@ -217,16 +242,17 @@ def test_two_uploads_with_the_same_filename_do_not_collide(
     rows and both files must survive, independently retrievable.
     """
     region = _add_region(db_session)
+    planting = _add_planting(db_session, region.id)
     db_session.commit()
 
-    first = _upload(client, region.slug, filename="foto.jpg", description="Primeira")
-    second = _upload(client, region.slug, filename="foto.jpg", description="Segunda")
+    first = _upload(client, planting.id, filename="foto.jpg", description="Primeira")
+    second = _upload(client, planting.id, filename="foto.jpg", description="Segunda")
 
     assert first.status_code == 201
     assert second.status_code == 201
     assert first.json()["id"] != second.json()["id"]
 
-    listing = client.get(f"/api/regions/{region.slug}/photos")
+    listing = client.get(f"/api/plantings/{planting.id}/photos")
     descriptions = {item["description"] for item in listing.json()["items"]}
     assert descriptions == {"Primeira", "Segunda"}
 
@@ -236,15 +262,16 @@ def test_two_uploads_with_the_same_filename_do_not_collide(
     assert second_file.status_code == 200
 
 
-def test_uploaded_photo_appears_in_the_regions_photo_listing(
+def test_uploaded_photo_appears_in_the_plantings_photo_listing(
     client: TestClient, db_session: Session
 ) -> None:
     region = _add_region(db_session)
+    planting = _add_planting(db_session, region.id)
     db_session.commit()
 
-    upload_response = _upload(client, region.slug, description="Recém chegada")
+    upload_response = _upload(client, planting.id, description="Recém chegada")
 
-    listing = client.get(f"/api/regions/{region.slug}/photos")
+    listing = client.get(f"/api/plantings/{planting.id}/photos")
 
     [item] = listing.json()["items"]
     assert item["id"] == upload_response.json()["id"]

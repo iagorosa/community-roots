@@ -68,15 +68,6 @@ def upload_photo(
     """Public (no admin token — anyone, including anonymously, can
     contribute a photo). See `app.services.photo_upload_service.upload_photo`
     for the validate/store/record pipeline this delegates to.
-
-    NOTE (issue #84 scope): `photo_upload_service.upload_photo` still
-    resolves its third argument as a Region identifier (`region_service.
-    get_region`) — it hasn't been migrated to Planting yet. That migration
-    is issue #85's scope (Task 7 of the pivot plan), tracked separately so
-    this route's path/param rename could land on its own. Until #85 lands,
-    a real upload through this route 404s (no Region has `planting_id`'s
-    value), which is expected and covered by the currently-skipped/updated
-    upload tests.
     """
     return photo_upload_service.upload_photo(
         db,

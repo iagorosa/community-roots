@@ -2,11 +2,14 @@
 resolution by slug or UUID. See docs/architecture.md §5.1 and issue #11.
 """
 
+import uuid
+
 import pytest
 from geoalchemy2.elements import WKTElement
 from sqlalchemy import event
 from sqlalchemy.orm import Session
 
+from app.models.qr_code import QrCode
 from app.models.region import Region
 from app.services import region_service
 from app.services.region_service import RegionNotFound
@@ -15,26 +18,29 @@ _POINT_A = "POINT(-43.3130 -21.8845)"
 _POINT_B = "POINT(-43.3200 -21.8900)"
 
 
-def _make_region(**overrides: object) -> Region:
+def _add_region(db_session: Session, **overrides: object) -> Region:
+    """Insert a `Region` plus the `QrCode` row every real region gets at
+    creation time (`region_service.create_region`) — the listing/read
+    queries INNER JOIN on it, so a region without one wouldn't be a
+    realistic fixture.
+    """
     defaults: dict[str, object] = {
         "slug": "canteiro-a",
         "name": "Canteiro A",
         "geom": WKTElement(_POINT_A, srid=4326),
-        "qr_token": "token-a",
     }
     defaults.update(overrides)
-    return Region(**defaults)
+    region = Region(**defaults)
+    db_session.add(region)
+    db_session.flush()
+    db_session.add(QrCode(region_id=region.id, token=f"token-{uuid.uuid4().hex[:8]}"))
+    return region
 
 
 def test_list_regions_returns_a_valid_feature_collection(db_session: Session) -> None:
-    db_session.add(_make_region())
-    db_session.add(
-        _make_region(
-            slug="canteiro-b",
-            name="Canteiro B",
-            geom=WKTElement(_POINT_B, srid=4326),
-            qr_token="token-b",
-        )
+    _add_region(db_session)
+    _add_region(
+        db_session, slug="canteiro-b", name="Canteiro B", geom=WKTElement(_POINT_B, srid=4326)
     )
     db_session.commit()
 
@@ -46,7 +52,7 @@ def test_list_regions_returns_a_valid_feature_collection(db_session: Session) ->
 
 
 def test_list_regions_serializes_geometry_and_default_photo_fields(db_session: Session) -> None:
-    db_session.add(_make_region())
+    _add_region(db_session)
     db_session.commit()
 
     [feature] = region_service.list_regions(db_session).features
@@ -60,14 +66,9 @@ def test_list_regions_serializes_geometry_and_default_photo_fields(db_session: S
 
 
 def test_list_regions_runs_a_single_query(db_session: Session) -> None:
-    db_session.add(_make_region())
-    db_session.add(
-        _make_region(
-            slug="canteiro-b",
-            name="Canteiro B",
-            geom=WKTElement(_POINT_B, srid=4326),
-            qr_token="token-b",
-        )
+    _add_region(db_session)
+    _add_region(
+        db_session, slug="canteiro-b", name="Canteiro B", geom=WKTElement(_POINT_B, srid=4326)
     )
     db_session.commit()
 
@@ -93,24 +94,20 @@ def test_list_regions_runs_a_single_query(db_session: Session) -> None:
 def test_list_regions_excludes_draft_and_archived_regions(db_session: Session) -> None:
     # architecture.md §4.5: `status` exists so an organizer can pull a region
     # from public view immediately — the public listing has to honor it.
-    db_session.add(_make_region())
-    db_session.add(
-        _make_region(
-            slug="canteiro-draft",
-            name="Canteiro Rascunho",
-            geom=WKTElement(_POINT_B, srid=4326),
-            qr_token="token-draft",
-            status="draft",
-        )
+    _add_region(db_session)
+    _add_region(
+        db_session,
+        slug="canteiro-draft",
+        name="Canteiro Rascunho",
+        geom=WKTElement(_POINT_B, srid=4326),
+        status="draft",
     )
-    db_session.add(
-        _make_region(
-            slug="canteiro-archived",
-            name="Canteiro Arquivado",
-            geom=WKTElement(_POINT_B, srid=4326),
-            qr_token="token-archived",
-            status="archived",
-        )
+    _add_region(
+        db_session,
+        slug="canteiro-archived",
+        name="Canteiro Arquivado",
+        geom=WKTElement(_POINT_B, srid=4326),
+        status="archived",
     )
     db_session.commit()
 
@@ -121,7 +118,7 @@ def test_list_regions_excludes_draft_and_archived_regions(db_session: Session) -
 
 
 def test_get_region_resolves_by_slug(db_session: Session) -> None:
-    db_session.add(_make_region())
+    _add_region(db_session)
     db_session.commit()
 
     feature = region_service.get_region(db_session, "canteiro-a")
@@ -130,8 +127,7 @@ def test_get_region_resolves_by_slug(db_session: Session) -> None:
 
 
 def test_get_region_resolves_by_uuid(db_session: Session) -> None:
-    region = _make_region()
-    db_session.add(region)
+    region = _add_region(db_session)
     db_session.commit()
 
     feature = region_service.get_region(db_session, str(region.id))
@@ -150,7 +146,7 @@ def test_get_region_raises_not_found_for_unknown_uuid(db_session: Session) -> No
 
 
 def test_get_region_raises_not_found_for_an_archived_region(db_session: Session) -> None:
-    db_session.add(_make_region(status="archived"))
+    _add_region(db_session, status="archived")
     db_session.commit()
 
     with pytest.raises(RegionNotFound):

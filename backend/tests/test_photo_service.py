@@ -12,6 +12,7 @@ from geoalchemy2.elements import WKTElement
 from sqlalchemy.orm import Session
 
 from app.models.photo import Photo
+from app.models.qr_code import QrCode
 from app.models.region import Region
 from app.services import photo_service
 from app.services.photo_service import InvalidCursor, PhotoNotFound
@@ -25,15 +26,24 @@ _POLYGON_WKT = (
 _POINT_WKT = "POINT(-43.3127 -21.8843)"
 
 
-def _make_region(**overrides: object) -> Region:
+def _add_region(db_session: Session, **overrides: object) -> Region:
+    """Insert a `Region` plus the `QrCode` row every real region gets at
+    creation time (`region_service.create_region`) — `region_service.
+    get_region` (which `photo_service.list_region_photos` reuses to resolve
+    the `{region}` path parameter) INNER JOINs on it, so a region without one
+    wouldn't be a realistic fixture.
+    """
     defaults: dict[str, object] = {
         "slug": "canteiro-a",
         "name": "Canteiro A",
         "geom": WKTElement(_POLYGON_WKT, srid=4326),
-        "qr_token": "token-a",
     }
     defaults.update(overrides)
-    return Region(**defaults)
+    region = Region(**defaults)
+    db_session.add(region)
+    db_session.flush()
+    db_session.add(QrCode(region_id=region.id, token=f"token-{uuid.uuid4().hex[:8]}"))
+    return region
 
 
 def _dt(hour: int, minute: int, second: int = 0) -> datetime:
@@ -57,9 +67,7 @@ def _make_photo(region_id: object, **overrides: object) -> Photo:
 def test_list_region_photos_returns_published_photos_most_recent_first(
     db_session: Session,
 ) -> None:
-    region = _make_region()
-    db_session.add(region)
-    db_session.flush()
+    region = _add_region(db_session)
 
     older = _make_photo(region.id, uploaded_at=_dt(9, 0))
     newer = _make_photo(region.id, uploaded_at=_dt(11, 0))
@@ -75,9 +83,7 @@ def test_list_region_photos_returns_published_photos_most_recent_first(
 def test_list_region_photos_derives_latitude_and_longitude_from_location(
     db_session: Session,
 ) -> None:
-    region = _make_region()
-    db_session.add(region)
-    db_session.flush()
+    region = _add_region(db_session)
 
     with_location = _make_photo(region.id, location=WKTElement(_POINT_WKT, srid=4326))
     without_location = _make_photo(region.id, uploaded_at=_dt(8, 0))
@@ -100,9 +106,7 @@ def test_list_region_photos_exposes_width_and_height(db_session: Session) -> Non
     only do that if `PhotoOut` carries the columns already recorded on
     upload (issue #20), rather than only the derived `latitude`/`longitude`.
     """
-    region = _make_region()
-    db_session.add(region)
-    db_session.flush()
+    region = _add_region(db_session)
 
     photo = _make_photo(region.id, width=800, height=600)
     db_session.add(photo)
@@ -116,9 +120,7 @@ def test_list_region_photos_exposes_width_and_height(db_session: Session) -> Non
 
 
 def test_list_region_photos_excludes_hidden_photos(db_session: Session) -> None:
-    region = _make_region()
-    db_session.add(region)
-    db_session.flush()
+    region = _add_region(db_session)
 
     published = _make_photo(region.id, status="published")
     hidden = _make_photo(region.id, status="hidden", uploaded_at=_dt(12, 0))
@@ -136,9 +138,7 @@ def test_list_region_photos_raises_not_found_for_unknown_region(db_session: Sess
 
 
 def test_list_region_photos_paginates_by_limit(db_session: Session) -> None:
-    region = _make_region()
-    db_session.add(region)
-    db_session.flush()
+    region = _add_region(db_session)
 
     photos = [_make_photo(region.id, uploaded_at=_dt(10, i)) for i in range(3)]
     db_session.add_all(photos)
@@ -161,9 +161,7 @@ def test_list_region_photos_pagination_is_stable_against_concurrent_inserts(
     must not appear on the second page, and the item that belongs there
     must appear exactly once — not duplicated, not skipped.
     """
-    region = _make_region()
-    db_session.add(region)
-    db_session.flush()
+    region = _add_region(db_session)
 
     photos = [_make_photo(region.id, uploaded_at=_dt(10, i)) for i in range(3)]
     db_session.add_all(photos)
@@ -189,8 +187,7 @@ def test_list_region_photos_pagination_is_stable_against_concurrent_inserts(
 
 
 def test_list_region_photos_rejects_a_malformed_cursor(db_session: Session) -> None:
-    region = _make_region()
-    db_session.add(region)
+    _add_region(db_session)
     db_session.commit()
 
     with pytest.raises(InvalidCursor):
@@ -200,9 +197,7 @@ def test_list_region_photos_rejects_a_malformed_cursor(db_session: Session) -> N
 def test_open_photo_file_returns_readable_bytes_and_the_stored_content_type(
     db_session: Session, tmp_path: Path
 ) -> None:
-    region = _make_region()
-    db_session.add(region)
-    db_session.flush()
+    region = _add_region(db_session)
 
     (tmp_path / "photos").mkdir()
     (tmp_path / "photos" / "a.png").write_bytes(b"fake-png-bytes")
@@ -233,9 +228,7 @@ def test_open_photo_file_raises_photo_not_found_for_a_hidden_photo(
     """`hidden` fully hides a photo's file too, not just the timeline listing
     — see the docstring of `photo_service.open_photo_file` for why.
     """
-    region = _make_region()
-    db_session.add(region)
-    db_session.flush()
+    region = _add_region(db_session)
 
     (tmp_path / "photos").mkdir()
     (tmp_path / "photos" / "a.png").write_bytes(b"fake-png-bytes")
@@ -255,9 +248,7 @@ def test_open_photo_file_raises_photo_not_found_when_the_file_is_missing_from_st
     hand during an incident) — this must surface as the same clean 404 as an
     unknown id, never as a 500 leaking a filesystem `FileNotFoundError`.
     """
-    region = _make_region()
-    db_session.add(region)
-    db_session.flush()
+    region = _add_region(db_session)
 
     photo = _make_photo(region.id, storage_key="photos/never-written.png")
     db_session.add(photo)

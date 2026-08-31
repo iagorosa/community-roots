@@ -7,6 +7,7 @@ already uses.
 """
 
 import io
+import uuid
 from collections.abc import Generator
 from pathlib import Path
 
@@ -18,6 +19,7 @@ from PIL import Image
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.models.qr_code import QrCode
 from app.models.region import Region
 from app.storage.dependency import get_storage_backend
 from app.storage.local import LocalFilesystemStorage
@@ -34,15 +36,24 @@ _LONGITUDE_DMS = (79.0, 58.0, 55.7027)
 _LONGITUDE_REF = "W"
 
 
-def _make_region(**overrides: object) -> Region:
+def _add_region(db_session: Session, **overrides: object) -> Region:
+    """Insert a `Region` plus the `QrCode` row every real region gets at
+    creation time (`region_service.create_region`) — `region_service.
+    get_region` (which `photo_upload_service.upload_photo` reuses to resolve
+    the `{region}` path parameter) INNER JOINs on it, so a region without one
+    wouldn't be a realistic fixture.
+    """
     defaults: dict[str, object] = {
         "slug": "canteiro-a",
         "name": "Canteiro A",
         "geom": WKTElement(_POLYGON_WKT, srid=4326),
-        "qr_token": "token-a",
     }
     defaults.update(overrides)
-    return Region(**defaults)
+    region = Region(**defaults)
+    db_session.add(region)
+    db_session.flush()
+    db_session.add(QrCode(region_id=region.id, token=f"token-{uuid.uuid4().hex[:8]}"))
+    return region
 
 
 def _jpeg_bytes(*, width: int = 32, height: int = 32, with_gps: bool = False) -> bytes:
@@ -95,8 +106,7 @@ def _upload(
 def test_valid_upload_without_sharing_location_returns_201_with_null_location(
     client: TestClient, db_session: Session
 ) -> None:
-    region = _make_region()
-    db_session.add(region)
+    region = _add_region(db_session)
     db_session.commit()
 
     response = _upload(
@@ -123,8 +133,7 @@ def test_valid_upload_without_sharing_location_returns_201_with_null_location(
 def test_valid_upload_with_share_location_true_and_gps_exif_returns_coordinates(
     client: TestClient, db_session: Session
 ) -> None:
-    region = _make_region()
-    db_session.add(region)
+    region = _add_region(db_session)
     db_session.commit()
 
     response = _upload(
@@ -145,8 +154,7 @@ def test_gps_exif_is_discarded_end_to_end_when_share_location_is_false(
     EXIF, but with `share_location=False` (the form's default) it must never
     reach the response or the stored `Photo` row — not partially, not at all.
     """
-    region = _make_region()
-    db_session.add(region)
+    region = _add_region(db_session)
     db_session.commit()
 
     response = _upload(
@@ -171,8 +179,7 @@ def test_upload_to_unknown_region_returns_404_in_portuguese(client: TestClient) 
 def test_upload_of_non_image_bytes_is_rejected_with_an_actionable_message(
     client: TestClient, db_session: Session
 ) -> None:
-    region = _make_region()
-    db_session.add(region)
+    region = _add_region(db_session)
     db_session.commit()
 
     response = _upload(client, region.slug, content=b"not an image, just plain text")
@@ -186,8 +193,7 @@ def test_upload_of_non_image_bytes_is_rejected_with_an_actionable_message(
 def test_upload_above_the_size_limit_is_rejected_with_a_readable_message(
     client: TestClient, db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    region = _make_region()
-    db_session.add(region)
+    region = _add_region(db_session)
     db_session.commit()
 
     # A tiny cap forces the (small, otherwise valid) test JPEG itself over
@@ -210,8 +216,7 @@ def test_two_uploads_with_the_same_filename_do_not_collide(
     sharing the exact same `file.filename` never overwrite one another. Both
     rows and both files must survive, independently retrievable.
     """
-    region = _make_region()
-    db_session.add(region)
+    region = _add_region(db_session)
     db_session.commit()
 
     first = _upload(client, region.slug, filename="foto.jpg", description="Primeira")
@@ -234,8 +239,7 @@ def test_two_uploads_with_the_same_filename_do_not_collide(
 def test_uploaded_photo_appears_in_the_regions_photo_listing(
     client: TestClient, db_session: Session
 ) -> None:
-    region = _make_region()
-    db_session.add(region)
+    region = _add_region(db_session)
     db_session.commit()
 
     upload_response = _upload(client, region.slug, description="Recém chegada")

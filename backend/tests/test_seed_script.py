@@ -8,6 +8,7 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.models.qr_code import QrCode
 from app.models.region import Region
 from scripts.seed import _grid_cell_centers, seed
 
@@ -58,13 +59,16 @@ def test_seed_repositions_existing_regions_when_center_changes(db_session: Sessi
 
 def test_seed_preserves_qr_token_across_reruns(db_session: Session) -> None:
     seed(db_session, center_lat=_CENTER_LAT, center_lon=_CENTER_LON, region_count=10)
+    first_region_id = db_session.execute(
+        select(Region.id).order_by(Region.slug).limit(1)
+    ).scalar_one()
     original_token = db_session.execute(
-        select(Region.qr_token).order_by(Region.slug).limit(1)
+        select(QrCode.token).where(QrCode.region_id == first_region_id)
     ).scalar_one()
 
     seed(db_session, center_lat=_CENTER_LAT, center_lon=_CENTER_LON, region_count=10)
     token_after_rerun = db_session.execute(
-        select(Region.qr_token).order_by(Region.slug).limit(1)
+        select(QrCode.token).where(QrCode.region_id == first_region_id)
     ).scalar_one()
 
     assert original_token == token_after_rerun

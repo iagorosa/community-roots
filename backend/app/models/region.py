@@ -1,4 +1,8 @@
-"""`Region` — a planting bed / garden plot. See docs/architecture.md §4.1/§4.2."""
+"""`Region` — a large planting-area grouping (e.g. "AAMA — Matias
+Barbosa"). QR codes live in `app.models.qr_code.QrCode`, not on this model.
+See docs/architecture.md §4.1/§4.2 and
+docs/superpowers/specs/2026-08-30-region-planting-pivot-design.md.
+"""
 
 from geoalchemy2 import Geometry
 from geoalchemy2.elements import WKBElement
@@ -48,4 +52,3 @@ class Region(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
 
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default="active")
-    qr_token: Mapped[str] = mapped_column(Text, unique=True, nullable=False)

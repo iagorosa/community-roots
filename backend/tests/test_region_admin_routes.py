@@ -8,6 +8,7 @@ from geoalchemy2.elements import WKTElement
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.models.qr_code import QrCode
 from app.models.region import Region
 
 _VALID_HEADERS = {"X-Admin-Token": settings.admin_api_token}
@@ -147,8 +148,9 @@ def _seed_region(db_session: Session) -> Region:
         slug="canteiro-existente",
         name="Canteiro Existente",
         geom=WKTElement("POINT(-43.3130 -21.8845)", srid=4326),
-        qr_token="existing-token",
     )
     db_session.add(region)
+    db_session.flush()
+    db_session.add(QrCode(region_id=region.id, token="existing-token"))
     db_session.commit()
     return region

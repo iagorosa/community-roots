@@ -26,8 +26,7 @@ class RegionProperties(BaseModel):
     description: str | None
     status: RegionStatus
     qr_token: str
-    photo_count: int
-    latest_photo_at: datetime | None
+    planting_count: int
     created_at: datetime
     updated_at: datetime
 

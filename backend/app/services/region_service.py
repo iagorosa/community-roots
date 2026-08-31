@@ -9,10 +9,11 @@ import unicodedata
 import uuid
 from typing import Any
 
-from sqlalchemy import ColumnElement, Row, func, literal, select
+from sqlalchemy import ColumnElement, Row, func, select
 from sqlalchemy.orm import Session
 
 from app.core.errors import NotFoundError, ValidationFailedError
+from app.models.planting import Planting
 from app.models.qr_code import QrCode
 from app.models.region import Region
 from app.schemas.region import (
@@ -53,11 +54,19 @@ def _region_feature_columns() -> tuple[ColumnElement[Any], ...]:
     listing) instead of surfacing as a 500 from a `NULL` where `qr_token`
     must be a `str`.
 
-    `photo_count`/`latest_photo_at` are literals, not the `LEFT JOIN LATERAL`
-    the issue describes: the `photos` table doesn't exist yet — the Photo
-    model is issue #20, milestone "Fase 4", which lands after this one. This
-    query is the natural place to add that join once it does.
+    `planting_count` is a correlated scalar subquery, not a `GROUP BY` — keeps
+    this a flat per-row column list (matching the existing query shape)
+    instead of forcing every other column into a `GROUP BY` clause. Only
+    `active` plantings count, mirroring `_PUBLICLY_VISIBLE` below: a
+    draft/archived planting isn't shown to the public, so it shouldn't be
+    counted for them either.
     """
+    planting_count = (
+        select(func.count())
+        .select_from(Planting)
+        .where(Planting.region_id == Region.id, Planting.status == "active")
+        .scalar_subquery()
+    )
     return (
         Region.id,
         Region.slug,
@@ -68,8 +77,7 @@ def _region_feature_columns() -> tuple[ColumnElement[Any], ...]:
         Region.created_at,
         Region.updated_at,
         func.ST_AsGeoJSON(Region.geom).label("geometry_geojson"),
-        literal(0).label("photo_count"),
-        literal(None).label("latest_photo_at"),
+        planting_count.label("planting_count"),
     )
 
 
@@ -87,8 +95,7 @@ def _row_to_feature(row: Row[Any]) -> RegionFeature:
             description=row.description,
             status=row.status,
             qr_token=row.qr_token,
-            photo_count=row.photo_count,
-            latest_photo_at=row.latest_photo_at,
+            planting_count=row.planting_count,
             created_at=row.created_at,
             updated_at=row.updated_at,
         ),

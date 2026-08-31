@@ -28,8 +28,7 @@ _ARCHITECTURE_DOC_EXAMPLE = {
         "description": "...",
         "status": "active",
         "qr_token": "k3Zq8xR2mNvA",
-        "photo_count": 12,
-        "latest_photo_at": "2026-08-24T14:03:11Z",
+        "planting_count": 12,
         "created_at": "2026-08-01T10:00:00Z",
         "updated_at": "2026-08-24T14:03:11Z",
     },
@@ -67,7 +66,7 @@ def test_region_feature_round_trips_the_architecture_doc_example() -> None:
     feature = RegionFeature.model_validate(_ARCHITECTURE_DOC_EXAMPLE)
 
     assert feature.properties.slug == "canteiro-do-ipe"
-    assert feature.properties.photo_count == 12
+    assert feature.properties.planting_count == 12
     assert feature.geometry.type == "Polygon"
 
 

@@ -103,6 +103,19 @@ function PhotoUploadForm({ plantingId }: PhotoUploadFormProps) {
         <label htmlFor={fileFieldId} className="text-sm font-semibold text-slate-700">
           Foto
         </label>
+        {/* The native `<input type="file">` renders its own tiny "Escolher
+            arquivo" button (issue #34: measured ~20px tall) that can't be
+            resized directly by CSS in every browser. Visually hidden
+            (`sr-only`, not `hidden` — it must stay in the tab order and
+            keep receiving the `change` event) in favor of this `<label>`
+            styled as a proper 44px button; a `<label for>` opens the same
+            native file picker as a real click on the input. */}
+        <label
+          htmlFor={fileFieldId}
+          className="flex min-h-11 w-fit cursor-pointer items-center rounded-md border border-emerald-600 px-4 text-sm font-semibold text-emerald-700"
+        >
+          {file ? 'Trocar foto' : 'Escolher foto'}
+        </label>
         <input
           ref={fileInputRef}
           id={fileFieldId}
@@ -110,8 +123,9 @@ function PhotoUploadForm({ plantingId }: PhotoUploadFormProps) {
           accept="image/*"
           capture="environment"
           onChange={handleFileChange}
-          className="text-sm text-slate-600"
+          className="sr-only"
         />
+        {file && <p className="text-sm text-slate-600">{file.name}</p>}
       </div>
 
       {previewUrl && (
@@ -126,12 +140,13 @@ function PhotoUploadForm({ plantingId }: PhotoUploadFormProps) {
         <label htmlFor={nameFieldId} className="text-sm font-semibold text-slate-700">
           Seu nome (opcional)
         </label>
+        {/* `py-3` (issue #34): `py-2` alone measured ~38px tall. */}
         <input
           id={nameFieldId}
           type="text"
           value={contributorName}
           onChange={(event) => setContributorName(event.target.value)}
-          className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+          className="rounded-md border border-slate-300 px-3 py-3 text-sm"
         />
       </div>
 
@@ -148,7 +163,12 @@ function PhotoUploadForm({ plantingId }: PhotoUploadFormProps) {
         />
       </div>
 
-      <div className="flex items-start gap-2">
+      {/* A native checkbox renders at ~13px regardless of CSS (issue #34) —
+          rather than fighting browser-native checkbox rendering, the whole
+          row is one `<label>` (min-h-11), so tapping the text hits the same
+          44px target as tapping the checkbox itself; `htmlFor` here is
+          redundant with the label wrapping its control, kept for clarity. */}
+      <label htmlFor={shareLocationFieldId} className="flex min-h-11 items-start gap-2 py-1">
         <input
           id={shareLocationFieldId}
           type="checkbox"
@@ -158,14 +178,14 @@ function PhotoUploadForm({ plantingId }: PhotoUploadFormProps) {
           className="mt-1"
         />
         <div className="flex flex-col gap-0.5">
-          <label htmlFor={shareLocationFieldId} className="text-sm font-semibold text-slate-700">
+          <span className="text-sm font-semibold text-slate-700">
             Compartilhar onde esta foto foi tirada
-          </label>
+          </span>
           <p id={shareLocationHintId} className="text-xs text-slate-500">
             Isso guarda a localização registrada na foto. Deixe desmarcado se não quiser.
           </p>
         </div>
-      </div>
+      </label>
 
       <button
         type="submit"

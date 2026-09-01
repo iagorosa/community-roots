@@ -86,11 +86,13 @@ function RegionPage() {
         <PlantingMap className="h-full" center={regionCenter(data)} />
       </div>
 
+      {/* `flex min-h-11 items-center` (issue #34): the bare underlined text
+          measured ~20px tall, well under the 44px touch-target floor. */}
       <a
         href={`/api/regions/${slug}/qr-code`}
         target="_blank"
         rel="noreferrer"
-        className="text-sm text-emerald-700 underline"
+        className="flex min-h-11 items-center text-sm text-emerald-700 underline"
       >
         Baixar QR Code da região
       </a>

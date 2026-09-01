@@ -1,0 +1,17 @@
+# Keeps the build context small and avoids baking dev-only artifacts (a
+# local venv, caches, secrets) into the production image built from
+# backend/Dockerfile.
+
+.venv/
+**/__pycache__/
+**/*.pyc
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+.env
+.env.*
+!.env.example
+
+storage/
+tests/

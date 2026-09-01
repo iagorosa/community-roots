@@ -495,24 +495,53 @@ identificadores e comentários no código permanecem em inglês.
 
 ## 9. Segurança e moderação
 
+Revisado ponta a ponta pela issue #37 (Fase 7): cada item abaixo foi testado contra
+o backend rodando localmente (curl, upload real, simulação de `ENVIRONMENT=production`),
+não só conferido pela leitura do código. Nenhuma divergência entre este documento e o
+comportamento real foi encontrada, e nenhuma correção foi necessária.
+
 Implementado no MVP:
 
 - Limite de tamanho no upload, validação de formato real e proteção contra bomba
-  de descompressão (§6.1).
+  de descompressão (§6.1). Confirmado: um upload de 11 MB (limite é 10 MB) é
+  rejeitado com `422 image_too_large` antes de o arquivo ser bufferizado por
+  inteiro; um arquivo não-imagem enviado com extensão `.jpg` e
+  `Content-Type: image/jpeg` forjados é rejeitado com `422 invalid_image`, porque
+  a decisão vem da decodificação real via Pillow, nunca do que o cliente declara.
 - EXIF removido de todo arquivo armazenado; GPS gravado apenas mediante adesão
   explícita (§6.2).
-- Endpoints administrativos de escrita (`POST` e `PATCH /api/regions`) exigem um
-  header `X-Admin-Token` que bata com `ADMIN_API_TOKEN`, comparado com
-  `secrets.compare_digest`. O backend se recusa a subir com token padrão ou vazio
-  quando `ENVIRONMENT=production`.
-- CORS restrito a `CORS_ALLOWED_ORIGINS`, nunca `*`.
+- Endpoints administrativos de escrita (`POST` e `PATCH /api/regions` e
+  `/api/plantings`) exigem um header `X-Admin-Token` que bata com
+  `ADMIN_API_TOKEN`, comparado com `secrets.compare_digest`. Confirmado: o
+  backend se recusa a **subir** (falha na importação de `app.core.config`, antes
+  de qualquer request) com token padrão (`troque-isto-localmente`) ou vazio
+  quando `ENVIRONMENT=production`; o token nunca aparece em log (`uvicorn`
+  access log e os dois `logger.exception` do backend nunca incluem headers ou
+  corpo da requisição) nem em resposta de erro (401 devolve texto genérico,
+  nunca o valor recebido nem o esperado).
+- CORS restrito a `CORS_ALLOWED_ORIGINS`, nunca `*` — é um campo obrigatório em
+  `Settings`, sem valor default. Confirmado com preflight real: origem permitida
+  recebe `Access-Control-Allow-Origin`; origem fora da lista não recebe o header
+  (o navegador bloqueia a leitura da resposta).
 - Chaves de storage e caminhos de arquivo nunca aparecem nas respostas.
+  Confirmado inspecionando a resposta crua do upload e da listagem de fotos: o
+  único identificador exposto é `photo_url` (`/api/photos/{id}/file`), nunca
+  `storage_key`. `regions.qr_token` também aparece nas respostas públicas, mas
+  por desenho (§7): é o mesmo valor impresso no QR Code físico, não um segredo.
 - `photos.status` permite ao organizador esconder conteúdo imediatamente.
 
 Documentado e adiado de propósito:
 
-- **Rate limiting.** Nenhum limite no envio de fotos no MVP; o endpoint é público
-  e este é o vetor de abuso mais claro. A Fase 7 avalia um limite por IP.
+- **Rate limiting.** Reavaliado nesta revisão (#37) e adiado de novo,
+  deliberadamente — não é uma lacuna esquecida. O endpoint de upload continua
+  público e sem limite por IP; ele segue sendo o vetor de abuso mais claro do
+  sistema. Razão para adiar de novo: o projeto ainda não tem escala nem
+  visibilidade pública que justifique a complexidade operacional de um limitador
+  (armazenamento de contadores, decisão de janela/threshold, risco de bloquear
+  IPs compartilhados como NAT de escola ou associação de bairro) sem evidência
+  concreta de abuso. Retomar quando houver sinal real de abuso (picos de envio,
+  spam de conteúdo) ou quando o projeto ganhar visibilidade pública que aumente
+  esse risco — o que vier primeiro.
 - **Moderação de imagem.** Não há fila de moderação, automática ou humana. O
   `photos.status` é a válvula de escape manual.
 - **Consentimento.** Não há fluxo de consentimento registrado para imagens de

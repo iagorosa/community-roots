@@ -24,3 +24,30 @@
 .region-layer-shape:focus-visible {
   stroke-width: 4;
 }
+
+/* Leaflet's built-in zoom control (issue #34): the default `.leaflet-bar`
+   buttons render at 26x26px content box (30x30 with their border) — under
+   the 44px touch-target floor. Safe to resize directly (unlike the marker
+   cluster bubbles, deliberately left alone below): these are plain `<a>`
+   tags with no JS-computed centering math riding on the original size.
+   `!important` is required, not decorative: `leaflet.css` itself has
+   `.leaflet-touch .leaflet-bar a { width: 30px; ... }` (two classes,
+   higher specificity than the single-class selector below), and it also
+   loads after this file in the bundle — so without `!important` this rule
+   would silently lose the cascade on precisely the touch devices this
+   fix is for. */
+.leaflet-control-zoom-in,
+.leaflet-control-zoom-out {
+  width: 44px !important;
+  height: 44px !important;
+  line-height: 44px !important;
+}
+
+/* NOT resized: `leaflet.markercluster`'s count bubbles (`.marker-cluster`,
+   40px) and the tile attribution links (`.leaflet-control-attribution a`,
+   line-height ~14px). Both are computed/positioned by their own library
+   code (marker-cluster's icon centering math assumes its default size);
+   forcing them to 44px risks exactly the kind of one-off, fragile override
+   this pass is meant to avoid, for a few px of shortfall on a legally
+   required and industry-standard control. Documented in the issue #34 PR
+   as a deliberate judgment call, not an oversight. */

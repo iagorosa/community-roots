@@ -103,8 +103,17 @@ function MapPage() {
 
   return (
     <MapPageShell>
-      <div className="relative flex-1">
-        <PlantingMap className="h-full" bounds={bounds}>
+      {/* `flex flex-col` here (not just `relative`) so `PlantingMap` is a
+          direct flex-column item and can take `flex-1` for its height —
+          `h-full` doesn't reliably resolve against this div, since ITS OWN
+          height only comes from being a flex-grown item one level up, not
+          from an explicit/fixed height (see `PlantingMap`'s own doc comment
+          on `className`). Confirmed live in a browser: with `h-full` here,
+          the map silently rendered at 0 height on every viewport, not just
+          mobile — `RegionSidebar`'s absolute overlay was the only thing
+          visible. */}
+      <div className="relative flex flex-1 flex-col">
+        <PlantingMap className="flex-1" bounds={bounds}>
           <RegionLayer data={regions} />
           {plantings && <PlantingClusterLayer data={plantings} onSelect={openPlanting} />}
         </PlantingMap>

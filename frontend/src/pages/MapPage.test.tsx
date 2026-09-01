@@ -16,7 +16,11 @@ vi.mock('react-leaflet', () => ({
     <div data-testid="region-layer" data-feature-count={props.data.features.length} />
   ),
   Marker: () => null,
-  useMap: () => ({ fitBounds: vi.fn() }),
+  // `getContainer` backs `PlantingClusterLayer`'s cluster-bubble-labeling
+  // `MutationObserver` (see that component's own comment) — a real,
+  // detached `<div>` since `MutationObserver.observe` needs an actual DOM
+  // node, not just a stub.
+  useMap: () => ({ fitBounds: vi.fn(), getContainer: () => document.createElement('div') }),
 }))
 
 vi.mock('react-leaflet-cluster', () => ({

@@ -3,6 +3,7 @@ import ReactDOMServer from 'react-dom/server'
 import { GeoJSON } from 'react-leaflet'
 import { useNavigate } from 'react-router'
 import type { RegionFeature, RegionFeatureCollection } from '../../types/api'
+import { isActivationKey } from '../../utils/keyboard.ts'
 import RegionPopup from './RegionPopup.tsx'
 
 interface RegionLayerProps {
@@ -29,10 +30,6 @@ function hasGetElement(layer: Layer): layer is Layer & { getElement(): Element |
  * carries it — see the comment where this is used. */
 function internalOpenPopupHandler(layer: Layer): LeafletEventHandlerFn | undefined {
   return (layer as { _openPopup?: LeafletEventHandlerFn })._openPopup
-}
-
-function isActivationKey(event: KeyboardEvent): boolean {
-  return event.key === 'Enter' || event.key === ' '
 }
 
 function RegionLayer({ data }: RegionLayerProps) {

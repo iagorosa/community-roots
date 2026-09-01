@@ -8,8 +8,11 @@ import { NavLink } from 'react-router'
 // font-metric rounding — a padding-based height came out a fraction of a
 // px short on some links, which still failed the ≥44px check despite
 // looking fine.
+// `text-emerald-700`, not `-600`, for the active state: `-600` measures
+// 3.77:1 against this header's white background — under WCAG AA's 4.5:1
+// floor for normal-weight text at this size. `-700` clears it at 5.48:1.
 const navLinkClassName = ({ isActive }: { isActive: boolean }) =>
-  `flex min-h-11 min-w-11 items-center justify-center ${isActive ? 'text-emerald-600' : 'text-slate-600 hover:text-emerald-600'}`
+  `flex min-h-11 min-w-11 items-center justify-center ${isActive ? 'text-emerald-700' : 'text-slate-600 hover:text-emerald-600'}`
 
 /**
  * Simple, always-visible navigation (issue #14). No hamburger menu: the

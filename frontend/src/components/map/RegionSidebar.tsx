@@ -69,12 +69,15 @@ function RegionSidebar({ regions }: RegionSidebarProps) {
               className="flex min-h-11 items-center justify-between rounded px-2 py-1 text-sm text-slate-700 hover:bg-emerald-50"
             >
               <span>{feature.properties.name}</span>
-              <span className="text-slate-400">{feature.properties.planting_count}</span>
+              {/* `text-slate-500`, not `-400` (issue #35): `-400` measures
+                  2.56:1 against this white background, well under WCAG
+                  AA's 4.5:1 floor for normal text. */}
+              <span className="text-slate-500">{feature.properties.planting_count}</span>
             </Link>
           </li>
         ))}
         {filteredFeatures.length === 0 && (
-          <li className="text-sm text-slate-400">Nenhuma região encontrada.</li>
+          <li className="text-sm text-slate-500">Nenhuma região encontrada.</li>
         )}
       </ul>
     </aside>

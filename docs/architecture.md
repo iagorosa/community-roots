@@ -150,6 +150,8 @@ community_roots/
 │   ├── .python-version           # 3.11.10
 │   ├── .env.example
 │   ├── pyproject.toml
+│   ├── Dockerfile                # imagem de produção (deploy), não usada localmente
+│   ├── .dockerignore
 │   ├── alembic.ini
 │   ├── alembic/versions/
 │   ├── app/
@@ -648,3 +650,129 @@ O desenho deixa estas portas abertas de propósito:
 - **Recursos espaciais.** "Qual canteiro contém este ponto?", "canteiro mais
   próximo" e interseção com um limite geográfico são consultas `ST_*` diretas
   contra as colunas já indexadas por GiST.
+
+---
+
+## 13. Deploy
+
+A plataforma já está decidida: **backend + Postgres no Railway** (container
+Docker, não serverless — o Postgres precisa de PostGIS, que não é uma extensão
+que um plano serverless deixa instalar) e **frontend estático na Vercel**. O
+`backend/Dockerfile` é só para essa publicação; localmente o backend continua
+rodando em venv (README), nunca em container.
+
+O que segue é o roteiro para quem for de fato publicar — esta seção documenta
+os passos, não os executa. Nenhum serviço foi criado no Railway/Vercel a
+partir dela.
+
+### 13.1 Backend no Railway
+
+**Serviço da aplicação.** Conectar o repositório ao projeto Railway (ou
+publicar via `railway up`, a partir de `backend/`) e apontar o serviço para
+`backend/Dockerfile`. Railway detecta o `Dockerfile` automaticamente quando o
+diretório raiz do serviço é `backend/`; não é necessário um `railway.json`
+além disso.
+
+**Banco de dados.** O addon padrão de Postgres do Railway **não** inclui
+PostGIS. É preciso adicionar um serviço de banco a partir da mesma imagem já
+usada localmente (`docker-compose.yml`):
+
+```
+railway add --image postgis/postgis:16-3.4
+```
+
+(ou, pela interface: "New" → "Database" → "Deploy from a Docker image" com a
+mesma tag). O serviço resultante expõe variáveis de conexão
+(`PGHOST`/`PGPORT`/`PGUSER`/`PGPASSWORD`/`PGDATABASE` e um `DATABASE_URL` no
+formato `postgresql://...`). O backend, porém, usa o driver `psycopg`
+explicitamente (`postgresql+psycopg://...`, veja `backend/.env.example`) — a
+`DATABASE_URL` do serviço Postgres não pode ser referenciada as-is. No serviço
+do backend, defina `DATABASE_URL` compondo o prefixo certo com as variáveis do
+serviço de banco via a sintaxe de variável de referência do Railway, por
+exemplo:
+
+```
+DATABASE_URL=postgresql+psycopg://${{Postgres.PGUSER}}:${{Postgres.PGPASSWORD}}@${{Postgres.RAILWAY_PRIVATE_DOMAIN}}:${{Postgres.PGPORT}}/${{Postgres.PGDATABASE}}
+```
+
+(troque `Postgres` pelo nome real dado ao serviço de banco no projeto).
+Usar `RAILWAY_PRIVATE_DOMAIN` mantém o tráfego entre os dois serviços na rede
+interna do Railway, sem sair para a internet pública.
+
+**Storage persistente.** O backend grava fotos em disco local
+(`LOCAL_STORAGE_PATH`, default `./storage` — dentro do container,
+`/app/storage`). Um container Railway comum não tem disco persistente: cada
+redeploy recria o filesystem do zero, e as fotos enviadas por usuários
+somem. É obrigatório anexar um **volume Railway** ao serviço do backend,
+montado exatamente no caminho de `LOCAL_STORAGE_PATH` (`/app/storage`, com a
+imagem deste `Dockerfile`). Sem esse volume, o critério de pronto "a imagem
+sobe" continua satisfeito, mas qualquer foto enviada em produção é perdida no
+próximo deploy.
+
+**Migrations.** O `CMD` do `backend/Dockerfile` roda
+`alembic upgrade head && exec uvicorn ...` — as migrations aplicam a cada
+boot do container, antes do servidor aceitar tráfego. Essa é a escolha
+adotada pelo projeto: `alembic upgrade head` é idempotente (não faz nada
+quando já não há migration pendente) e o Railway não tem, por padrão, uma
+"release phase" separada do boot do container para um deploy Docker simples
+— sem isso, alguém precisaria lembrar de rodar as migrations manualmente a
+cada deploy, o que é fácil de esquecer. A alternativa — rodar
+`railway run --service backend alembic upgrade head` manualmente antes de
+cada deploy, e tirar a chamada do `CMD` — fica registrada aqui caso uma
+migration futura seja grande o bastante para exigir uma janela controlada,
+mas não é o padrão atual.
+
+**Seed.** `scripts/seed.py` **não** roda no boot do container — se rodasse,
+seria executado a cada deploy, duplicando ou reposicionando dados a cada
+publicação. Ele é uma ação manual, feita uma única vez contra o banco de
+produção:
+
+```
+railway run --service backend python scripts/seed.py
+```
+
+**Variáveis de ambiente do serviço do backend.** Reaproveitando as descrições
+de `backend/.env.example`:
+
+| Variável | Descrição |
+|---|---|
+| `ENVIRONMENT` | `production` — ativa a recusa de subir com `ADMIN_API_TOKEN` vazio ou igual ao placeholder do `.env.example` (ver `app/core/config.py`). |
+| `LOG_LEVEL` | Nível de log da aplicação (`INFO` é o default). |
+| `DATABASE_URL` | String de conexão `postgresql+psycopg://...` composta a partir do serviço Postgres, como acima. |
+| `PUBLIC_WEB_BASE_URL` | URL pública do frontend na Vercel — os QR Codes codificam `{PUBLIC_WEB_BASE_URL}/r/{qr_token}`; mudar depois de imprimir códigos os invalida. |
+| `CORS_ALLOWED_ORIGINS` | Domínio(s) da Vercel, separados por vírgula — nunca `*` em produção. Só é conhecido depois do deploy do frontend (§13.3). |
+| `ADMIN_API_TOKEN` | Token exigido em `X-Admin-Token` para `POST`/`PATCH /api/regions`. Precisa de um valor real e secreto — nunca o placeholder `troque-isto-localmente` do `.env.example`, ou o processo se recusa a iniciar. |
+| `STORAGE_BACKEND` | `local` — único backend implementado até aqui (ver §12, "Armazenamento em objeto"). |
+| `LOCAL_STORAGE_PATH` | Caminho onde as fotos são gravadas dentro do container; deve bater com o ponto de montagem do volume Railway (`/app/storage`). |
+| `MAX_UPLOAD_BYTES` | Limite de tamanho de upload de foto, em bytes. |
+| `ALLOWED_IMAGE_FORMATS` | Formatos de imagem aceitos, separados por vírgula. |
+| `SEED_CENTER_LAT` / `SEED_CENTER_LON` / `SEED_PLANTING_COUNT` | Só usadas por `scripts/seed.py` — sem efeito no boot normal do servidor, mas precisam estar presentes porque `Settings` as exige. |
+
+`PORT` não entra nessa lista: o Railway injeta essa variável em tempo de
+execução, e o `CMD` do `Dockerfile` já lê `$PORT` para o uvicorn escutar na
+porta correta — não deve ser definida manualmente.
+
+### 13.2 Frontend na Vercel
+
+Conectar o repositório à Vercel apontando o **root directory** do projeto
+para `frontend/` (framework preset "Vite"; build command e diretório de saída
+default — `vite build` / `dist` — já funcionam sem ajuste).
+
+Variáveis de ambiente do projeto Vercel:
+
+- `VITE_API_BASE_URL`: precisa apontar para a URL pública do backend no
+  Railway. **Passo pendente/manual**, só executável depois que o backend
+  estiver publicado e sua URL for conhecida — não há como prever essa URL
+  aqui. Configurar na Vercel e disparar um redeploy do frontend.
+- Demais variáveis (`VITE_MAP_TILE_URL`, `VITE_MAP_TILE_ATTRIBUTION`,
+  `VITE_MAP_DEFAULT_LAT`, `VITE_MAP_DEFAULT_LON`, `VITE_MAP_DEFAULT_ZOOM`):
+  os defaults de `frontend/.env.example` servem também em produção, sem
+  mudança.
+
+### 13.3 CORS entre os dois
+
+Depois que o domínio da Vercel existir, `CORS_ALLOWED_ORIGINS` no serviço do
+backend no Railway precisa ser atualizado para esse domínio real (substituindo
+qualquer valor provisório usado durante o primeiro boot) e o serviço
+reiniciado. **Passo pendente/manual**, na mesma categoria do `VITE_API_BASE_URL`
+acima: os dois lados só se conhecem depois que ambos existem.

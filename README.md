@@ -145,10 +145,13 @@ cd backend
 python scripts/seed.py
 ```
 
-Isso cria 10 canteiros fictícios distribuídos ao redor de `SEED_CENTER_LAT` e
-`SEED_CENTER_LON`. **A geometria é um placeholder** — os polígonos reais serão
+Isso cria uma única `Region` (a AAMA — Matias Barbosa) ao redor de
+`SEED_CENTER_LAT`/`SEED_CENTER_LON`, com `SEED_PLANTING_COUNT` `Planting`s
+(mudas) distribuídas em grade dentro dela, cada uma com um `nickname`
+fictício. **A geometria é um placeholder** — os polígonos reais serão
 importados quando o geógrafo entregar o levantamento. Rodar o script de novo não
-muda nada: ele reconhece os canteiros pelo slug.
+duplica nada: ele reconhece a região pelo slug e só completa as mudas que
+ainda faltarem.
 
 ---
 

@@ -49,7 +49,7 @@ class Settings(BaseSettings):
 
     seed_center_lat: float = -21.883859
     seed_center_lon: float = -43.312459
-    seed_region_count: int = 10
+    seed_planting_count: int = 40
 
     @field_validator("cors_allowed_origins", "allowed_image_formats", mode="before")
     @classmethod

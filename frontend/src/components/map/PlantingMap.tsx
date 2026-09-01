@@ -4,10 +4,27 @@
 // but a single import site keeps that guarantee obvious).
 import 'leaflet/dist/leaflet.css'
 
+import L from 'leaflet'
 import type { LatLngBoundsExpression } from 'leaflet'
+import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png'
+import markerIcon from 'leaflet/dist/images/marker-icon.png'
+import markerShadow from 'leaflet/dist/images/marker-shadow.png'
 import type { ReactNode } from 'react'
 import { useEffect } from 'react'
 import { MapContainer, TileLayer, useMap } from 'react-leaflet'
+
+// `L.Icon.Default` resolves its own image paths via a `require`-like guess
+// that Vite's ESM bundling doesn't satisfy, so every plain `<Marker>`
+// (PlantingClusterLayer's individual pins, once a cluster spiderfies) fell
+// back to a broken-image icon in production — dev's bundling happens to
+// paper over this, which is why it never showed up locally (issue #129).
+// Pointing the default icon at Vite-resolved asset URLs, once here — the
+// map's one mount point — fixes every plain `<Marker>` in the app at once.
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: markerIcon2x,
+  iconUrl: markerIcon,
+  shadowUrl: markerShadow,
+})
 
 function requiredEnvVar(name: string, value: string | undefined): string {
   if (!value) {

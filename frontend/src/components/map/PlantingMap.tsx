@@ -44,6 +44,13 @@ const DEFAULT_CENTER: [number, number] = [
 ]
 const DEFAULT_ZOOM = Number(requiredEnvVar('VITE_MAP_DEFAULT_ZOOM', import.meta.env.VITE_MAP_DEFAULT_ZOOM))
 
+// OpenStreetMap's standard tile server renders native tiles up to zoom 19
+// (its tile usage policy) — Leaflet's own `TileLayer` default (18) leaves
+// one native level on the table before falling back to blurry upscaling.
+// A fixed technical ceiling of the tile source itself, not a per-deploy
+// setting, so it isn't a `VITE_` env var like `DEFAULT_ZOOM` above.
+const MAX_ZOOM = 19
+
 interface PlantingMapProps {
   /**
    * Required, not optional: the parent decides height by CSS
@@ -97,8 +104,8 @@ function PlantingMap({
   children,
 }: PlantingMapProps) {
   return (
-    <MapContainer center={center} zoom={zoom} scrollWheelZoom className={className}>
-      <TileLayer url={TILE_URL} attribution={TILE_ATTRIBUTION} />
+    <MapContainer center={center} zoom={zoom} maxZoom={MAX_ZOOM} scrollWheelZoom className={className}>
+      <TileLayer url={TILE_URL} attribution={TILE_ATTRIBUTION} maxZoom={MAX_ZOOM} />
       {bounds && <FitBounds bounds={bounds} />}
       {children}
     </MapContainer>

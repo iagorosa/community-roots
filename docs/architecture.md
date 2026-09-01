@@ -261,6 +261,7 @@ simples, sem recalcular centroide a cada requisição.
 | `location` | `geometry(Point, 4326)` nulo | Ver [§4.4](#44-decisão-de-localização-da-foto) |
 | `location_source` | `text` nulo | `exif` hoje; `manual` e `browser` são valores futuros |
 | `status` | `text` not null, padrão `'published'` | CHECK em (`published`, `hidden`) |
+| `includes_identifiable_person_with_consent` | `boolean` not null, padrão `false` | Ver [§9](#9-segurança-e-moderação) — issue #38 |
 
 Índice em `(region_id, uploaded_at DESC)` — a consulta da linha do tempo é o
 caminho quente.
@@ -529,6 +530,38 @@ Implementado no MVP:
   `storage_key`. `regions.qr_token` também aparece nas respostas públicas, mas
   por desenho (§7): é o mesmo valor impresso no QR Code físico, não um segredo.
 - `photos.status` permite ao organizador esconder conteúdo imediatamente.
+- **Consentimento para fotos de pessoas identificáveis (issue #38).** Decisão
+  de política tomada: fotos com pessoas identificáveis (não só plantas) são
+  permitidas, **com** consentimento. O formulário de envio (`PhotoUploadForm`)
+  tem duas caixas de seleção: a primeira, sempre visível e desmarcada por
+  padrão, declara "esta foto inclui uma ou mais pessoas identificáveis"; ao
+  marcá-la, uma segunda aparece e se torna obrigatória para enviar: "confirmo
+  que tenho autorização do responsável para publicar esta foto com pessoa(s)
+  identificável(is)". Marcar a primeira sem a segunda bloqueia o envio no
+  frontend com mensagem clara. O backend repete a mesma regra
+  (`photo_upload_service.upload_photo`, erro estruturado
+  `identifiable_person_consent_required`) — não confia só na validação do
+  cliente, pelo mesmo motivo que a validação de formato de imagem (§6.1)
+  também não confia no `Content-Type` declarado. O resultado é persistido
+  como um único booleano em `photos.includes_identifiable_person_with_consent`
+  (`true` só quando as duas caixas foram marcadas); o texto exato da
+  declaração vive só no frontend/nesta documentação, não duplicado no banco —
+  o carimbo de tempo já existe em `uploaded_at`.
+
+  **Isso é consentimento autodeclarado, não verificado de verdade** — o
+  mesmo espírito do `contributor_name`, que também é texto livre sem
+  validação. Nada aqui confirma que a pessoa que marcou a caixa é de fato o
+  responsável, ou que a autorização foi realmente dada; é uma mitigação
+  razoável para o tamanho atual do projeto (comunitário, sem equipe jurídica,
+  sem sistema de identidade), não uma verificação jurídica de consentimento.
+  A moderação continua manual: o organizador da AAMA revisa e usa
+  `photos.status` (`published`/`hidden`) para esconder qualquer foto
+  problemática assim que perceber ou for avisado — **sem SLA formal**, dado o
+  tamanho atual do projeto. Nenhum endpoint novo de moderação foi criado; a
+  correção continua sendo um `UPDATE` direto no banco, como já era o caso
+  para qualquer outro motivo de esconder uma foto (§4.5). Esta decisão foi
+  tomada pelo responsável do projeto antes da implementação, como pré-requisito
+  para qualquer lançamento público — não é uma escolha técnica desta issue.
 
 Documentado e adiado de propósito:
 
@@ -542,12 +575,9 @@ Documentado e adiado de propósito:
   concreta de abuso. Retomar quando houver sinal real de abuso (picos de envio,
   spam de conteúdo) ou quando o projeto ganhar visibilidade pública que aumente
   esse risco — o que vier primeiro.
-- **Moderação de imagem.** Não há fila de moderação, automática ou humana. O
-  `photos.status` é a válvula de escape manual.
-- **Consentimento.** Não há fluxo de consentimento registrado para imagens de
-  pessoas identificáveis. Se o projeto fotografar crianças, e não apenas plantas,
-  isso exige uma decisão de política antes de qualquer lançamento público — é uma
-  questão jurídica (LGPD), não técnica.
+- **Moderação de imagem.** Não há fila de moderação automática (visão
+  computacional, por exemplo). A moderação humana existe e está descrita
+  acima, junto da decisão de consentimento que ela agora também cobre.
 - **Autenticação.** Não há contas de usuário. O token administrativo é um
   paliativo, não um sistema de autenticação; os caminhos de escrita já estão
   isolados atrás de uma única dependência, então substituí-lo é uma mudança

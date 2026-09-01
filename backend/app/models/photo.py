@@ -5,7 +5,7 @@ from datetime import datetime
 
 from geoalchemy2 import Geometry
 from geoalchemy2.elements import WKBElement
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, Text, func
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -65,6 +65,22 @@ class Photo(UUIDPrimaryKeyMixin, Base):
     # can pull a photo offline with a single `UPDATE`, not a migration, given
     # the product involves public uploads by and about children.
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default="published")
+
+    # Issue #38 (LGPD consent policy). `True` only when the upload form's two
+    # checkboxes were both checked: "this photo includes an identifiable
+    # person" and "I confirm I have the guardian's authorization to publish
+    # it". Self-declared, like `contributor_name` — there is no real
+    # verification of the consent, only of the fact that the uploader
+    # affirmatively claimed it, which is what `photo_upload_service.
+    # upload_photo` enforces server-side (architecture.md §9). A single
+    # boolean rather than two separate columns because nothing downstream
+    # (the organizer's manual moderation via `status`) needs to distinguish
+    # "no person in the photo" from "person, but consent wasn't confirmed" —
+    # that second case is already rejected before a `Photo` row is ever
+    # created.
+    includes_identifiable_person_with_consent: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
 
     __table_args__ = (
         CheckConstraint(

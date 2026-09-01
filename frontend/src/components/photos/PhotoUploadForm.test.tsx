@@ -132,6 +132,92 @@ describe('PhotoUploadForm', () => {
     expect(screen.queryByAltText(/pré-visualização/i)).not.toBeInTheDocument()
   })
 
+  // Issue #38 (LGPD, docs/architecture.md §9): a photo may include an
+  // identifiable person only with the uploader's self-declared confirmation
+  // that they have the guardian's authorization. Checkbox A ("includes an
+  // identifiable person") is always visible, unchecked by default; checkbox
+  // B (the authorization confirmation) only appears once A is checked, and
+  // is required to submit while A stays checked.
+  describe('identifiable-person consent', () => {
+    it('starts with the identifiable-person checkbox unchecked and the consent checkbox hidden', () => {
+      renderForm()
+
+      expect(screen.getByRole('checkbox', { name: /pessoas identificáveis/i })).not.toBeChecked()
+      expect(screen.queryByRole('checkbox', { name: /autorização do responsável/i })).not.toBeInTheDocument()
+    })
+
+    it('reveals the consent checkbox once the identifiable-person checkbox is checked', () => {
+      renderForm()
+
+      fireEvent.click(screen.getByRole('checkbox', { name: /pessoas identificáveis/i }))
+
+      expect(screen.getByRole('checkbox', { name: /autorização do responsável/i })).not.toBeChecked()
+    })
+
+    it('hides the consent checkbox again when the identifiable-person checkbox is unchecked', () => {
+      renderForm()
+      const identifiableCheckbox = screen.getByRole('checkbox', { name: /pessoas identificáveis/i })
+
+      fireEvent.click(identifiableCheckbox)
+      fireEvent.click(identifiableCheckbox)
+
+      expect(screen.queryByRole('checkbox', { name: /autorização do responsável/i })).not.toBeInTheDocument()
+    })
+
+    it('blocks submission with a clear message when the identifiable-person checkbox is checked without consent', () => {
+      renderForm()
+
+      selectFile(screen.getByLabelText('Foto'), makeFile())
+      fireEvent.click(screen.getByRole('checkbox', { name: /pessoas identificáveis/i }))
+
+      expect(screen.getByRole('button', { name: /enviar foto/i })).toBeDisabled()
+      expect(screen.getByRole('alert')).toHaveTextContent(/autorização do responsável/i)
+    })
+
+    it('enables submission again once the consent checkbox is also checked', () => {
+      renderForm()
+
+      selectFile(screen.getByLabelText('Foto'), makeFile())
+      fireEvent.click(screen.getByRole('checkbox', { name: /pessoas identificáveis/i }))
+      fireEvent.click(screen.getByRole('checkbox', { name: /autorização do responsável/i }))
+
+      expect(screen.getByRole('button', { name: /enviar foto/i })).toBeEnabled()
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    })
+
+    it('sends both consent fields as true when both checkboxes are checked', async () => {
+      const fetchMock = vi.fn().mockResolvedValue(jsonResponse(UPLOADED_PHOTO, 201))
+      vi.stubGlobal('fetch', fetchMock)
+      renderForm()
+
+      selectFile(screen.getByLabelText('Foto'), makeFile())
+      fireEvent.click(screen.getByRole('checkbox', { name: /pessoas identificáveis/i }))
+      fireEvent.click(screen.getByRole('checkbox', { name: /autorização do responsável/i }))
+      fireEvent.click(screen.getByRole('button', { name: /enviar foto/i }))
+
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+      const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+      const body = init.body as FormData
+      expect(body.get('includes_identifiable_person')).toBe('true')
+      expect(body.get('identifiable_person_consent_confirmed')).toBe('true')
+    })
+
+    it('sends both consent fields as false for the common case of a plant-only photo', async () => {
+      const fetchMock = vi.fn().mockResolvedValue(jsonResponse(UPLOADED_PHOTO, 201))
+      vi.stubGlobal('fetch', fetchMock)
+      renderForm()
+
+      selectFile(screen.getByLabelText('Foto'), makeFile())
+      fireEvent.click(screen.getByRole('button', { name: /enviar foto/i }))
+
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+      const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+      const body = init.body as FormData
+      expect(body.get('includes_identifiable_person')).toBe('false')
+      expect(body.get('identifiable_person_consent_confirmed')).toBe('false')
+    })
+  })
+
   it('shows the backend error message as plain readable text, not a status code or raw JSON', async () => {
     const fetchMock = vi
       .fn()

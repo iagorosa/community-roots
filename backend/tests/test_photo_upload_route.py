@@ -20,6 +20,7 @@ from PIL import Image
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.models.photo import Photo
 from app.models.planting import Planting
 from app.models.qr_code import QrCode
 from app.models.region import Region
@@ -276,3 +277,78 @@ def test_uploaded_photo_appears_in_the_plantings_photo_listing(
     [item] = listing.json()["items"]
     assert item["id"] == upload_response.json()["id"]
     assert item["description"] == "Recém chegada"
+
+
+# Issue #38 (LGPD): a photo may include an identifiable person only with the
+# uploader's confirmation that they have the guardian's authorization —
+# architecture.md §9. These tests exercise the backend side of that rule,
+# which must hold even if the frontend's own checkbox pairing (issue #38,
+# `PhotoUploadForm`) is bypassed or broken.
+
+
+def test_upload_with_neither_identifiable_person_field_set_still_works_like_before(
+    client: TestClient, db_session: Session
+) -> None:
+    """The common case (a photo of a plant, not a person) must keep working
+    with nothing extra filled in — this issue is purely additive.
+    """
+    region = _add_region(db_session)
+    planting = _add_planting(db_session, region.id)
+    db_session.commit()
+
+    response = _upload(client, planting.id)
+
+    assert response.status_code == 201
+    photo_id = uuid.UUID(response.json()["id"])
+    stored = db_session.get(Photo, photo_id)
+    assert stored is not None
+    assert stored.includes_identifiable_person_with_consent is False
+
+
+def test_upload_with_identifiable_person_and_consent_confirmed_is_recorded(
+    client: TestClient, db_session: Session
+) -> None:
+    region = _add_region(db_session)
+    planting = _add_planting(db_session, region.id)
+    db_session.commit()
+
+    response = _upload(
+        client,
+        planting.id,
+        includes_identifiable_person="true",
+        identifiable_person_consent_confirmed="true",
+    )
+
+    assert response.status_code == 201
+    photo_id = uuid.UUID(response.json()["id"])
+    stored = db_session.get(Photo, photo_id)
+    assert stored is not None
+    assert stored.includes_identifiable_person_with_consent is True
+
+
+def test_upload_with_identifiable_person_but_without_consent_is_rejected(
+    client: TestClient, db_session: Session
+) -> None:
+    """The rule the frontend's own checkbox pairing enforces client-side
+    (issue #38) must also hold server-side — a client that skips or forges
+    the browser check must not be able to publish an undeclared photo of an
+    identifiable person.
+    """
+    region = _add_region(db_session)
+    planting = _add_planting(db_session, region.id)
+    db_session.commit()
+
+    response = _upload(
+        client,
+        planting.id,
+        includes_identifiable_person="true",
+        identifiable_person_consent_confirmed="false",
+    )
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["code"] == "identifiable_person_consent_required"
+    assert body.get("detail")
+
+    listing = client.get(f"/api/plantings/{planting.id}/photos")
+    assert listing.json()["items"] == []

@@ -16,6 +16,14 @@ export interface UploadPhotoParams {
   // (docs/architecture.md §6.2), and this makes that the caller's default
   // too, not just the UI's.
   shareLocation?: boolean
+  // Issue #38 (LGPD, docs/architecture.md §9): the two `PhotoUploadForm`
+  // checkboxes — "this photo includes an identifiable person" and "I have
+  // the guardian's authorization" — both default to false for the same
+  // reason `shareLocation` does above. The backend
+  // (`photo_upload_service.upload_photo`) re-validates the pairing; this
+  // type only carries the values through.
+  includesIdentifiablePerson?: boolean
+  identifiablePersonConsentConfirmed?: boolean
 }
 
 // `identifier` is a Planting id (no slug — see types/api.ts's PlantingProperties comment).
@@ -51,6 +59,11 @@ export function uploadPhoto(identifier: string, params: UploadPhotoParams): Prom
     formData.set('contributor_name', params.contributorName)
   }
   formData.set('share_location', String(params.shareLocation ?? false))
+  formData.set('includes_identifiable_person', String(params.includesIdentifiablePerson ?? false))
+  formData.set(
+    'identifiable_person_consent_confirmed',
+    String(params.identifiablePersonConsentConfirmed ?? false),
+  )
 
   return apiFetch<Photo>(`/api/plantings/${identifier}/photos`, {
     method: 'POST',

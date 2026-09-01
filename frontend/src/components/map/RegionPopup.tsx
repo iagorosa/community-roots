@@ -11,12 +11,13 @@ interface RegionPopupProps {
  * `<Link>` against), so this is a real `<a href>` instead.
  */
 function RegionPopup({ properties }: RegionPopupProps) {
-  const photoCountLabel = properties.photo_count === 1 ? '1 foto' : `${properties.photo_count} fotos`
+  const plantingCountLabel =
+    properties.planting_count === 1 ? '1 muda' : `${properties.planting_count} mudas`
 
   return (
     <div>
       <p className="font-semibold text-slate-800">{properties.name}</p>
-      <p className="text-sm text-slate-600">{photoCountLabel}</p>
+      <p className="text-sm text-slate-600">{plantingCountLabel}</p>
       <a href={`/regions/${properties.slug}`} className="text-sm text-emerald-700 underline">
         Ver canteiro
       </a>

@@ -97,10 +97,25 @@ describe('AppRoutes', () => {
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Canteiro do Ipê' })).toBeInTheDocument())
   })
 
-  it('resolves /r/:qrToken to the QR redirect page with the token from the URL', () => {
+  it('resolves /r/:qrToken to a region page after the token resolves', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        let body: unknown
+        if (url.startsWith('/api/qr/')) {
+          body = { type: 'region', identifier: 'canteiro-do-ipe' }
+        } else if (url.startsWith('/api/plantings')) {
+          body = { type: 'FeatureCollection', features: [] }
+        } else {
+          body = SAMPLE_REGION
+        }
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) } as Response)
+      }),
+    )
+
     renderAtPath('/r/k3Zq8xR2mNvA')
 
-    expect(screen.getByText('k3Zq8xR2mNvA')).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Canteiro do Ipê' })).toBeInTheDocument())
   })
 
   it('resolves an unknown path to the not-found page', () => {

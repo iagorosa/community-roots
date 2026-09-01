@@ -84,11 +84,12 @@ describe('AppRoutes', () => {
   it('resolves /regions/:slug to the region page with the region matching the slug from the URL', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        status: 200,
-        json: () => Promise.resolve(SAMPLE_REGION),
-      } as Response),
+      vi.fn((url: string) => {
+        const body = url.startsWith('/api/plantings')
+          ? { type: 'FeatureCollection', features: [] }
+          : SAMPLE_REGION
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) } as Response)
+      }),
     )
 
     renderAtPath('/regions/canteiro-do-ipe')

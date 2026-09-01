@@ -661,9 +661,11 @@ que um plano serverless deixa instalar) e **frontend estático na Vercel**. O
 `backend/Dockerfile` é só para essa publicação; localmente o backend continua
 rodando em venv (README), nunca em container.
 
-O que segue é o roteiro para quem for de fato publicar — esta seção documenta
-os passos, não os executa. Nenhum serviço foi criado no Railway/Vercel a
-partir dela.
+**O deploy já aconteceu** (issue #39 documentou o roteiro antes; esta seção
+foi atualizada depois, com o resultado real e dois problemas encontrados na
+hora). O que segue serve tanto de registro do estado atual quanto de roteiro
+para quem precisar recriar um serviço do zero (ex.: um ambiente de staging,
+ou recuperar de um projeto Railway apagado).
 
 ### 13.1 Backend no Railway
 
@@ -673,31 +675,75 @@ publicar via `railway up`, a partir de `backend/`) e apontar o serviço para
 diretório raiz do serviço é `backend/`; não é necessário um `railway.json`
 além disso.
 
+**`railway up` sem `--path-as-root` — armadilha real.** Publicar via CLI a
+partir da raiz do repositório com `railway up --path-as-root backend -s
+backend` chegou a excluir `app/storage/` silenciosamente do build, mesmo
+com `backend/.dockerignore` correto — a flag interage mal com o `.gitignore`
+da raiz do projeto ao remapear os caminhos do arquivo enviado, e o sintoma só
+aparece no boot (`ModuleNotFoundError: No module named 'app.storage'`), não
+no build. Um `docker build` local do mesmo commit funciona normalmente, o que
+torna esse caso enganoso. O jeito confiável é publicar de dentro do próprio
+diretório, sem essa flag:
+
+```
+cd backend
+railway up -p <project-id> -s backend -e production
+```
+
 **Banco de dados.** O addon padrão de Postgres do Railway **não** inclui
 PostGIS. É preciso adicionar um serviço de banco a partir da mesma imagem já
 usada localmente (`docker-compose.yml`):
 
 ```
-railway add --image postgis/postgis:16-3.4
+railway add --image postgis/postgis:16-3.4 --variables "POSTGRES_USER=..." \
+  --variables "POSTGRES_PASSWORD=..." --variables "POSTGRES_DB=..."
 ```
 
 (ou, pela interface: "New" → "Database" → "Deploy from a Docker image" com a
-mesma tag). O serviço resultante expõe variáveis de conexão
-(`PGHOST`/`PGPORT`/`PGUSER`/`PGPASSWORD`/`PGDATABASE` e um `DATABASE_URL` no
-formato `postgresql://...`). O backend, porém, usa o driver `psycopg`
-explicitamente (`postgresql+psycopg://...`, veja `backend/.env.example`) — a
-`DATABASE_URL` do serviço Postgres não pode ser referenciada as-is. No serviço
-do backend, defina `DATABASE_URL` compondo o prefixo certo com as variáveis do
-serviço de banco via a sintaxe de variável de referência do Railway, por
-exemplo:
+mesma tag, definindo as mesmas três variáveis). **Diferente do addon oficial
+de Postgres do Railway, uma imagem Docker customizada como esta não gera
+`PGHOST`/`PGPORT`/`PGUSER`/`PGPASSWORD`/`PGDATABASE`/`DATABASE_URL`
+automaticamente** — essas variáveis só existem pra o plugin gerenciado, não
+pra um serviço criado via `--image`. O que o Railway injeta de graça aqui é só
+`RAILWAY_PRIVATE_DOMAIN` (o endereço interno do serviço, ex.
+`postgres.railway.internal`) — o resto (usuário, senha, porta, nome do banco)
+é o que você mesmo definiu acima.
+
+Componha a `DATABASE_URL` (no formato que o backend espera, driver `psycopg`
+explícito) e registre-a como variável no **próprio serviço de banco**, pra
+poder referenciá-la do backend sem repetir a senha em dois lugares:
 
 ```
-DATABASE_URL=postgresql+psycopg://${{Postgres.PGUSER}}:${{Postgres.PGPASSWORD}}@${{Postgres.RAILWAY_PRIVATE_DOMAIN}}:${{Postgres.PGPORT}}/${{Postgres.PGDATABASE}}
+# no serviço "postgres":
+DATABASE_URL=postgresql+psycopg://<usuário>:<senha>@postgres.railway.internal:5432/<banco>
+
+# no serviço do backend:
+DATABASE_URL=${{postgres.DATABASE_URL}}
 ```
 
-(troque `Postgres` pelo nome real dado ao serviço de banco no projeto).
-Usar `RAILWAY_PRIVATE_DOMAIN` mantém o tráfego entre os dois serviços na rede
-interna do Railway, sem sair para a internet pública.
+(troque `postgres` pelo nome real dado ao serviço de banco no projeto). Usar
+`RAILWAY_PRIVATE_DOMAIN` (o `postgres.railway.internal` acima) mantém o
+tráfego entre os dois serviços na rede interna do Railway, sem sair para a
+internet pública.
+
+**Volume do Postgres — armadilha real.** O serviço de banco também precisa de
+um volume Railway (senão os dados somem a cada redeploy, igual ao storage do
+backend abaixo). **Não monte esse volume direto em `/var/lib/postgresql/data`**:
+um volume novo do Railway vem com um diretório `lost+found` (padrão de
+qualquer filesystem recém-formatado), e o `initdb` da imagem `postgis/postgis`
+se recusa a inicializar num diretório não-vazio — o container entra num loop
+de crash-restart sem nunca conseguir subir. A correção é montar o volume
+normalmente em `/var/lib/postgresql/data`, mas apontar `PGDATA` para um
+**subdiretório** dentro dele:
+
+```
+PGDATA=/var/lib/postgresql/data/pgdata
+```
+
+Isso vale tanto pra primeira criação do serviço quanto pra recriar um volume
+do zero — sem o `PGDATA`, o sintoma é sempre o mesmo: o serviço nunca sai do
+estado de boot, com `initdb: error: directory ... exists but is not empty` no
+log.
 
 **Storage persistente.** O backend grava fotos em disco local
 (`LOCAL_STORAGE_PATH`, default `./storage` — dentro do container,
@@ -717,18 +763,25 @@ quando já não há migration pendente) e o Railway não tem, por padrão, uma
 "release phase" separada do boot do container para um deploy Docker simples
 — sem isso, alguém precisaria lembrar de rodar as migrations manualmente a
 cada deploy, o que é fácil de esquecer. A alternativa — rodar
-`railway run --service backend alembic upgrade head` manualmente antes de
-cada deploy, e tirar a chamada do `CMD` — fica registrada aqui caso uma
-migration futura seja grande o bastante para exigir uma janela controlada,
-mas não é o padrão atual.
+`railway ssh --service backend "alembic upgrade head"` manualmente antes de
+cada deploy (não `railway run`, pelo mesmo motivo explicado no Seed logo
+abaixo: `railway run` executa localmente, e `DATABASE_URL` só é alcançável
+de dentro da rede do Railway), e tirar a chamada do `CMD` — fica registrada
+aqui caso uma migration futura seja grande o bastante para exigir uma janela
+controlada, mas não é o padrão atual.
 
 **Seed.** `scripts/seed.py` **não** roda no boot do container — se rodasse,
 seria executado a cada deploy, duplicando ou reposicionando dados a cada
 publicação. Ele é uma ação manual, feita uma única vez contra o banco de
-produção:
+produção — **`railway run` não serve pra isso**: ele roda o comando na sua
+máquina local, só injetando as variáveis de ambiente, e `DATABASE_URL` aponta
+pro domínio privado (`*.railway.internal`), que só é alcançável de dentro da
+rede do Railway. O jeito que funciona é `railway ssh`, que executa dentro do
+próprio container do backend (já tem `scripts/` e o venv prontos, via
+`backend/Dockerfile`):
 
 ```
-railway run --service backend python scripts/seed.py
+railway ssh --service backend "python scripts/seed.py"
 ```
 
 **Variáveis de ambiente do serviço do backend.** Reaproveitando as descrições
@@ -740,7 +793,7 @@ de `backend/.env.example`:
 | `LOG_LEVEL` | Nível de log da aplicação (`INFO` é o default). |
 | `DATABASE_URL` | String de conexão `postgresql+psycopg://...` composta a partir do serviço Postgres, como acima. |
 | `PUBLIC_WEB_BASE_URL` | URL pública do frontend na Vercel — os QR Codes codificam `{PUBLIC_WEB_BASE_URL}/r/{qr_token}`; mudar depois de imprimir códigos os invalida. |
-| `CORS_ALLOWED_ORIGINS` | Domínio(s) da Vercel, separados por vírgula — nunca `*` em produção. Só é conhecido depois do deploy do frontend (§13.3). |
+| `CORS_ALLOWED_ORIGINS` | Domínio(s) da Vercel, separados por vírgula — nunca `*` em produção. |
 | `ADMIN_API_TOKEN` | Token exigido em `X-Admin-Token` para `POST`/`PATCH /api/regions`. Precisa de um valor real e secreto — nunca o placeholder `troque-isto-localmente` do `.env.example`, ou o processo se recusa a iniciar. |
 | `STORAGE_BACKEND` | `local` — único backend implementado até aqui (ver §12, "Armazenamento em objeto"). |
 | `LOCAL_STORAGE_PATH` | Caminho onde as fotos são gravadas dentro do container; deve bater com o ponto de montagem do volume Railway (`/app/storage`). |
@@ -758,12 +811,27 @@ Conectar o repositório à Vercel apontando o **root directory** do projeto
 para `frontend/` (framework preset "Vite"; build command e diretório de saída
 default — `vite build` / `dist` — já funcionam sem ajuste).
 
+**Rewrite de SPA — obrigatório.** Sem `frontend/vercel.json`, a Vercel serve
+os arquivos estáticos do build diretamente: qualquer rota que não seja um
+arquivo real (`/mapa`, `/regions/:slug`, `/r/:qrToken`) recebe um 404 do
+próprio CDN, antes do React Router sequer carregar. Isso quebra o fluxo mais
+importante do produto — o link físico impresso no QR Code aponta direto para
+`/r/:qrToken`. O arquivo já existe no repositório:
+
+```json
+{
+  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+}
+```
+
 Variáveis de ambiente do projeto Vercel:
 
-- `VITE_API_BASE_URL`: precisa apontar para a URL pública do backend no
-  Railway. **Passo pendente/manual**, só executável depois que o backend
-  estiver publicado e sua URL for conhecida — não há como prever essa URL
-  aqui. Configurar na Vercel e disparar um redeploy do frontend.
+- `VITE_API_BASE_URL`: aponta para a URL pública do backend no Railway. Só
+  dá pra preencher depois que o backend estiver publicado e sua URL for
+  conhecida — nessa ordem (backend primeiro), não há como prever essa URL de
+  antemão. Depois de configurar, é preciso disparar um redeploy do frontend
+  para o valor entrar no bundle (variáveis `VITE_` são resolvidas em build
+  time, não em runtime).
 - Demais variáveis (`VITE_MAP_TILE_URL`, `VITE_MAP_TILE_ATTRIBUTION`,
   `VITE_MAP_DEFAULT_LAT`, `VITE_MAP_DEFAULT_LON`, `VITE_MAP_DEFAULT_ZOOM`):
   os defaults de `frontend/.env.example` servem também em produção, sem
@@ -774,5 +842,7 @@ Variáveis de ambiente do projeto Vercel:
 Depois que o domínio da Vercel existir, `CORS_ALLOWED_ORIGINS` no serviço do
 backend no Railway precisa ser atualizado para esse domínio real (substituindo
 qualquer valor provisório usado durante o primeiro boot) e o serviço
-reiniciado. **Passo pendente/manual**, na mesma categoria do `VITE_API_BASE_URL`
-acima: os dois lados só se conhecem depois que ambos existem.
+reiniciado — os dois lados só se conhecem depois que ambos existem, então a
+ordem prática do primeiro deploy é: banco → backend (com um
+`CORS_ALLOWED_ORIGINS` provisório) → frontend → backend de novo, agora com o
+domínio real da Vercel.

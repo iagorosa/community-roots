@@ -68,6 +68,25 @@ describe('QrRedirectPage', () => {
 
     renderAtToken('nao-existe')
 
-    await waitFor(() => expect(screen.getByRole('alert')).toBeInTheDocument())
+    const alert = await screen.findByRole('alert')
+    // "Escanear novamente" only makes sense once the token itself is
+    // confirmed bad (404) — telling someone to rescan a perfectly valid
+    // code because the backend is down would send them looking for a
+    // problem that isn't there.
+    expect(alert).toHaveTextContent('Não foi possível reconhecer este código. Tente escanear novamente.')
+  })
+
+  it('shows a "try again later" error, not the unknown-token message, when resolving fails for a server reason', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        jsonResponse({ detail: 'Ocorreu um erro inesperado. Tente novamente em instantes.', code: 'internal_error' }, 500),
+      ),
+    )
+
+    renderAtToken('k3Zq8xR2mNvA')
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('Não foi possível carregar este código agora. Tente novamente mais tarde.')
   })
 })

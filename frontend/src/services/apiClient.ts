@@ -49,11 +49,19 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   try {
     response = await fetch(`${API_BASE_URL}${path}`, init)
   } catch {
-    throw new ApiError('Não foi possível conectar ao servidor.')
+    // No next step in "não foi possível conectar" alone (issue #36: every
+    // error state must say what to do next) — this is also the message a
+    // fully offline backend produces (a stopped process, not just a 5xx),
+    // so it's the one place that condition is user-visible at all.
+    throw new ApiError('Não foi possível conectar ao servidor. Verifique sua conexão e tente novamente.')
   }
 
   if (!response.ok) {
-    const genericMessage = `O servidor respondeu com erro (${response.status}).`
+    // Only reached when the backend's own `{ detail, code }` body (checked
+    // below) isn't there to use instead — still Portuguese and actionable
+    // on its own (issue #36), for the rare case of a non-JSON error page
+    // (e.g. a proxy/gateway in front of the API, not the API itself).
+    const genericMessage = `O servidor respondeu com erro (${response.status}). Tente novamente mais tarde.`
 
     // The backend sends actionable, user-facing `detail`/`code` on error
     // responses (docs/architecture.md §5.3) — but the body might not be

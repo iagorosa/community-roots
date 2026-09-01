@@ -8,7 +8,14 @@ from sqlalchemy.orm import Session
 
 from app.core.security import require_admin_token
 from app.db.session import get_db
-from app.schemas.region import RegionCreate, RegionFeature, RegionFeatureCollection, RegionUpdate
+from app.schemas.region import (
+    RegionCreate,
+    RegionFeature,
+    RegionFeatureCollection,
+    RegionImportFeatureCollection,
+    RegionImportSummary,
+    RegionUpdate,
+)
 from app.services import qr_service, region_service
 
 router = APIRouter(prefix="/api/regions", tags=["regions"])
@@ -87,3 +94,15 @@ def update_region(
     db: Session = Depends(get_db),  # noqa: B008 — FastAPI's DI relies on this call-in-default pattern.
 ) -> RegionFeature:
     return region_service.update_region(db, region, payload)
+
+
+@router.post(
+    "/import",
+    response_model=RegionImportSummary,
+    dependencies=[Depends(require_admin_token)],
+)
+def import_regions(
+    payload: RegionImportFeatureCollection,
+    db: Session = Depends(get_db),  # noqa: B008 — FastAPI's DI relies on this call-in-default pattern.
+) -> RegionImportSummary:
+    return region_service.import_regions(db, payload)

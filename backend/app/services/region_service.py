@@ -20,6 +20,8 @@ from app.schemas.region import (
     RegionCreate,
     RegionFeature,
     RegionFeatureCollection,
+    RegionImportFeatureCollection,
+    RegionImportSummary,
     RegionProperties,
     RegionUpdate,
 )
@@ -210,6 +212,47 @@ def create_region(db: Session, payload: RegionCreate) -> RegionFeature:
     qr_code_service.create_region_qr_code(db, region.id)
     db.commit()
     return _fetch_feature_by_id(db, region.id)
+
+
+def import_regions(db: Session, payload: RegionImportFeatureCollection) -> RegionImportSummary:
+    """Upsert regions by slug from the geographer's `FeatureCollection`
+    (architecture.md §12, issue #33) — the same "create if the slug is
+    unseen, else update" shape as `scripts/seed.py`'s idempotent seeding,
+    extended with a third outcome: a feature whose slug matches no region
+    and carries no `name` can't be turned into a full region, so it's
+    skipped rather than failing the whole import.
+
+    Matching an existing region only touches its `geom` — `qr_token` lives
+    on a separate `QrCode` row keyed by `region_id`, untouched here, so every
+    code already printed for that region stays valid.
+    """
+    created = updated = ignored = 0
+
+    for feature in payload.features:
+        region = db.execute(
+            select(Region).where(Region.slug == feature.properties.slug)
+        ).scalar_one_or_none()
+
+        if region is not None:
+            region.geom = _geometry_to_geom_expression(feature.geometry)
+            updated += 1
+        elif feature.properties.name:
+            region = Region(
+                slug=feature.properties.slug,
+                name=feature.properties.name,
+                description=feature.properties.description,
+                geom=_geometry_to_geom_expression(feature.geometry),
+                status=feature.properties.status or "active",
+            )
+            db.add(region)
+            db.flush()  # assigns region.id before the QrCode FK needs it
+            qr_code_service.create_region_qr_code(db, region.id)
+            created += 1
+        else:
+            ignored += 1
+
+    db.commit()
+    return RegionImportSummary(created=created, updated=updated, ignored=ignored)
 
 
 # `RegionUpdate.name`/`.status` are `X | None = None` only so `None` can mean

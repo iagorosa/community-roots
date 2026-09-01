@@ -2,13 +2,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { RegionFeatureCollection } from '../types/api'
+import type { PlantingFeatureCollection, RegionFeatureCollection } from '../types/api'
 import MapPage from './MapPage'
 
-// `MapPage` renders `PlantingMap` (which renders `RegionLayer` once data
-// arrives), so react-leaflet is faked the same shallow way its own test
-// files do (docs/architecture.md §10) — real Leaflet needs layout/canvas
-// APIs jsdom doesn't provide.
 vi.mock('react-leaflet', () => ({
   MapContainer: ({ children, ...props }: Record<string, unknown> & { children?: React.ReactNode }) => (
     <div data-testid="map-container" data-props={JSON.stringify(props)}>
@@ -19,10 +15,15 @@ vi.mock('react-leaflet', () => ({
   GeoJSON: (props: { data: RegionFeatureCollection }) => (
     <div data-testid="region-layer" data-feature-count={props.data.features.length} />
   ),
+  Marker: () => null,
   useMap: () => ({ fitBounds: vi.fn() }),
 }))
 
-const SAMPLE_COLLECTION: RegionFeatureCollection = {
+vi.mock('react-leaflet-cluster', () => ({
+  default: ({ children }: { children: React.ReactNode }) => <div data-testid="planting-layer">{children}</div>,
+}))
+
+const SAMPLE_REGIONS: RegionFeatureCollection = {
   type: 'FeatureCollection',
   features: [
     {
@@ -35,7 +36,31 @@ const SAMPLE_COLLECTION: RegionFeatureCollection = {
         description: null,
         status: 'active',
         qr_token: 'k3Zq8xR2mNvA',
-        planting_count: 0,
+        planting_count: 1,
+        created_at: '2026-08-01T10:00:00Z',
+        updated_at: '2026-08-01T10:00:00Z',
+      },
+    },
+  ],
+}
+
+const SAMPLE_PLANTINGS: PlantingFeatureCollection = {
+  type: 'FeatureCollection',
+  features: [
+    {
+      type: 'Feature',
+      id: '1a2b3c4d-5e6f-7890-abcd-ef1234567890',
+      geometry: { type: 'Point', coordinates: [-43.3129, -21.8843] },
+      properties: {
+        region_id: '0f1c1234-5678-90ab-cdef-1234567890ab',
+        species: 'Ipê-amarelo',
+        nickname: null,
+        planted_by: null,
+        planted_at: null,
+        status: 'active',
+        qr_token: 'tok-planting',
+        photo_count: 0,
+        latest_photo_at: null,
         created_at: '2026-08-01T10:00:00Z',
         updated_at: '2026-08-01T10:00:00Z',
       },
@@ -47,11 +72,24 @@ function jsonResponse(body: unknown): Response {
   return { ok: true, status: 200, json: () => Promise.resolve(body) } as Response
 }
 
-function renderMapPage() {
+function stubFetch(options: { regions: unknown; plantings?: unknown; planting?: unknown }) {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((url: string) => {
+      if (url.startsWith('/api/plantings/')) return Promise.resolve(jsonResponse(options.planting))
+      if (url.startsWith('/api/plantings')) {
+        return Promise.resolve(jsonResponse(options.plantings ?? { type: 'FeatureCollection', features: [] }))
+      }
+      return Promise.resolve(jsonResponse(options.regions))
+    }),
+  )
+}
+
+function renderMapPage(initialEntry = '/mapa') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={[initialEntry]}>
         <MapPage />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -64,10 +102,7 @@ describe('MapPage', () => {
   })
 
   it('shows a loading state while the regions are being fetched', () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockReturnValue(new Promise(() => {})),
-    )
+    vi.stubGlobal('fetch', vi.fn().mockReturnValue(new Promise(() => {})))
 
     renderMapPage()
 
@@ -84,27 +119,33 @@ describe('MapPage', () => {
   })
 
   it('shows an empty state when there are no canteiros to display', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue(jsonResponse({ type: 'FeatureCollection', features: [] })),
-    )
+    stubFetch({ regions: { type: 'FeatureCollection', features: [] } })
 
     renderMapPage()
 
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent(/nenhum canteiro/i))
   })
 
-  it('renders the map with the fetched canteiros', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(SAMPLE_COLLECTION)))
+  it('renders the region layer and the planting cluster layer with the fetched data', async () => {
+    stubFetch({ regions: SAMPLE_REGIONS, plantings: SAMPLE_PLANTINGS })
 
     renderMapPage()
 
     await waitFor(() => expect(screen.getByTestId('map-container')).toBeInTheDocument())
     expect(screen.getByTestId('region-layer')).toHaveAttribute('data-feature-count', '1')
+    await waitFor(() => expect(screen.getByTestId('planting-layer')).toBeInTheDocument())
+  })
+
+  it('opens the planting drawer when ?planting= is present on load', async () => {
+    stubFetch({ regions: SAMPLE_REGIONS, plantings: SAMPLE_PLANTINGS, planting: SAMPLE_PLANTINGS.features[0] })
+
+    renderMapPage('/mapa?planting=1a2b3c4d-5e6f-7890-abcd-ef1234567890')
+
+    await waitFor(() => expect(screen.getByText('Ipê-amarelo')).toBeInTheDocument())
   })
 
   it('keeps the page heading visible in every state', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(SAMPLE_COLLECTION)))
+    stubFetch({ regions: SAMPLE_REGIONS, plantings: SAMPLE_PLANTINGS })
 
     renderMapPage()
 

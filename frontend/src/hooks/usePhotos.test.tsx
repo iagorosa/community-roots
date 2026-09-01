@@ -17,7 +17,7 @@ function createWrapper() {
 
 describe('usePhotos', () => {
   it('fetches the first page of a region photos through the photos service', async () => {
-    const fetchSpy = vi.spyOn(photosService, 'fetchRegionPhotos').mockResolvedValue(SAMPLE_PAGE)
+    const fetchSpy = vi.spyOn(photosService, 'fetchPlantingPhotos').mockResolvedValue(SAMPLE_PAGE)
 
     const { result } = renderHook(() => usePhotos('canteiro-do-ipe'), { wrapper: createWrapper() })
 

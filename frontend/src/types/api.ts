@@ -24,16 +24,15 @@ export type RegionGeometry = Point | Polygon | MultiPolygon
 export type RegionStatus = 'active' | 'draft' | 'archived'
 
 // The `properties` object of a region `Feature` (architecture.md §5.1).
-// `latest_photo_at`/`created_at`/`updated_at` are ISO 8601 strings over the
-// wire — parse with `new Date(...)` at the point of use, not here.
+// `created_at`/`updated_at` are ISO 8601 strings over the wire — parse with
+// `new Date(...)` at the point of use, not here.
 export interface RegionProperties {
   slug: string
   name: string
   description: string | null
   status: RegionStatus
   qr_token: string
-  photo_count: number
-  latest_photo_at: string | null
+  planting_count: number
   created_at: string
   updated_at: string
 }
@@ -52,6 +51,39 @@ export interface FeatureCollection<Geometry, Properties> {
 
 export type RegionFeature = Feature<RegionGeometry, RegionProperties>
 export type RegionFeatureCollection = FeatureCollection<RegionGeometry, RegionProperties>
+
+// Mirrors backend/app/schemas/planting.py. A Planting has no slug — it's
+// resolved by id only (backend/app/services/planting_service.py).
+export type PlantingStatus = 'active' | 'draft' | 'archived'
+
+// Same three shapes `Region` allows (`ck_plantings_geom_type`) — a
+// Planting starts as a Point but may become a Polygon later.
+export type PlantingGeometry = Point | Polygon | MultiPolygon
+
+export interface PlantingProperties {
+  region_id: string
+  species: string | null
+  nickname: string | null
+  planted_by: string | null
+  planted_at: string | null
+  status: PlantingStatus
+  qr_token: string
+  photo_count: number
+  latest_photo_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type PlantingFeature = Feature<PlantingGeometry, PlantingProperties>
+export type PlantingFeatureCollection = FeatureCollection<PlantingGeometry, PlantingProperties>
+
+// Mirrors backend/app/api/routes/qr.py::QrResolution — what a scanned QR
+// token resolves to. `identifier` is a region's slug or a planting's id;
+// the frontend decides the destination path from `type` alone.
+export interface QrResolution {
+  type: 'region' | 'planting'
+  identifier: string
+}
 
 // Mirrors backend/app/schemas/photo.py::PhotoOut. `width`/`height` are the
 // dimensions recorded on upload (issue #20) — the frontend timeline

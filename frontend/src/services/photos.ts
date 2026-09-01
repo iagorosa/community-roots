@@ -1,7 +1,7 @@
 import type { Photo, PhotoPage } from '../types/api'
 import { apiFetch } from './apiClient'
 
-export interface FetchRegionPhotosParams {
+export interface FetchPlantingPhotosParams {
   cursor?: string
   limit?: number
 }
@@ -18,12 +18,10 @@ export interface UploadPhotoParams {
   shareLocation?: boolean
 }
 
-// `identifier` accepts either a slug or a UUID, same as `fetchRegion`
-// (backend/app/services/region_service.py::get_region resolves both, and
-// this route delegates to it — backend/app/services/photo_service.py).
-export function fetchRegionPhotos(
+// `identifier` is a Planting id (no slug — see types/api.ts's PlantingProperties comment).
+export function fetchPlantingPhotos(
   identifier: string,
-  params?: FetchRegionPhotosParams,
+  params?: FetchPlantingPhotosParams,
 ): Promise<PhotoPage> {
   const query = new URLSearchParams()
   if (params?.cursor !== undefined) {
@@ -34,7 +32,7 @@ export function fetchRegionPhotos(
   }
 
   const queryString = query.toString()
-  const path = `/api/regions/${identifier}/photos${queryString ? `?${queryString}` : ''}`
+  const path = `/api/plantings/${identifier}/photos${queryString ? `?${queryString}` : ''}`
   return apiFetch<PhotoPage>(path)
 }
 
@@ -54,7 +52,7 @@ export function uploadPhoto(identifier: string, params: UploadPhotoParams): Prom
   }
   formData.set('share_location', String(params.shareLocation ?? false))
 
-  return apiFetch<Photo>(`/api/regions/${identifier}/photos`, {
+  return apiFetch<Photo>(`/api/plantings/${identifier}/photos`, {
     method: 'POST',
     body: formData,
   })

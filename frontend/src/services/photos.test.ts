@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Photo, PhotoPage } from '../types/api'
-import { fetchRegionPhotos, uploadPhoto } from './photos'
+import { fetchPlantingPhotos, uploadPhoto } from './photos'
 
 const SAMPLE_PHOTO: Photo = {
   id: '0f1c1234-5678-90ab-cdef-1234567890ab',
@@ -27,27 +27,27 @@ function stubFetchResolving(body: unknown, status = 200) {
   return fetchMock
 }
 
-describe('fetchRegionPhotos', () => {
+describe('fetchPlantingPhotos', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
   })
 
-  it('requests GET /api/regions/{identifier}/photos with no query params by default', async () => {
+  it('requests GET /api/plantings/{identifier}/photos with no query params by default', async () => {
     const fetchMock = stubFetchResolving(SAMPLE_PAGE)
 
-    const result = await fetchRegionPhotos('canteiro-do-ipe')
+    const result = await fetchPlantingPhotos('canteiro-do-ipe')
 
-    expect(fetchMock).toHaveBeenCalledWith('/api/regions/canteiro-do-ipe/photos', undefined)
+    expect(fetchMock).toHaveBeenCalledWith('/api/plantings/canteiro-do-ipe/photos', undefined)
     expect(result).toEqual(SAMPLE_PAGE)
   })
 
   it('includes cursor and limit as query params when given', async () => {
     const fetchMock = stubFetchResolving(SAMPLE_PAGE)
 
-    await fetchRegionPhotos('canteiro-do-ipe', { cursor: 'abc123', limit: 5 })
+    await fetchPlantingPhotos('canteiro-do-ipe', { cursor: 'abc123', limit: 5 })
 
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/regions/canteiro-do-ipe/photos?cursor=abc123&limit=5',
+      '/api/plantings/canteiro-do-ipe/photos?cursor=abc123&limit=5',
       undefined,
     )
   })
@@ -55,9 +55,9 @@ describe('fetchRegionPhotos', () => {
   it('omits a param from the query string when it is not given', async () => {
     const fetchMock = stubFetchResolving(SAMPLE_PAGE)
 
-    await fetchRegionPhotos('canteiro-do-ipe', { limit: 5 })
+    await fetchPlantingPhotos('canteiro-do-ipe', { limit: 5 })
 
-    expect(fetchMock).toHaveBeenCalledWith('/api/regions/canteiro-do-ipe/photos?limit=5', undefined)
+    expect(fetchMock).toHaveBeenCalledWith('/api/plantings/canteiro-do-ipe/photos?limit=5', undefined)
   })
 })
 
@@ -66,7 +66,7 @@ describe('uploadPhoto', () => {
     vi.unstubAllGlobals()
   })
 
-  it('POSTs a FormData body with the file to /api/regions/{identifier}/photos', async () => {
+  it('POSTs a FormData body with the file to /api/plantings/{identifier}/photos', async () => {
     const fetchMock = stubFetchResolving(SAMPLE_PHOTO, 201)
     const file = new File(['fake-image-bytes'], 'canteiro.jpg', { type: 'image/jpeg' })
 
@@ -74,7 +74,7 @@ describe('uploadPhoto', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1)
     const [path, init] = fetchMock.mock.calls[0] as [string, RequestInit]
-    expect(path).toBe('/api/regions/canteiro-do-ipe/photos')
+    expect(path).toBe('/api/plantings/canteiro-do-ipe/photos')
     expect(init.method).toBe('POST')
     expect(init.body).toBeInstanceOf(FormData)
     const body = init.body as FormData

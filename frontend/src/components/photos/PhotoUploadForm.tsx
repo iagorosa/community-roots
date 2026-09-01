@@ -187,10 +187,14 @@ function PhotoUploadForm({ plantingId }: PhotoUploadFormProps) {
         </div>
       </label>
 
+      {/* `bg-emerald-700`, not `-600` (issue #35): white text on `-600`
+          measures 3.77:1, under WCAG AA's 4.5:1 floor for this
+          normal-weight text — `-700` clears it at 5.48:1. Disabled state is
+          exempt (an inoperable control isn't a contrast requirement). */}
       <button
         type="submit"
         disabled={!file || isPending}
-        className="rounded-lg bg-emerald-600 px-6 py-3 font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500"
+        className="rounded-lg bg-emerald-700 px-6 py-3 font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500"
       >
         {isPending ? 'Enviando...' : 'Enviar foto'}
       </button>

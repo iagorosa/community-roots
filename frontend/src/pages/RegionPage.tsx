@@ -30,9 +30,14 @@ function PlantingListSection({ regionId }: { regionId: string }) {
     <ul className="flex flex-col gap-2">
       {data.features.map((feature) => (
         <li key={feature.id}>
+          {/* `hover:border-emerald-600`, not `-400` (issue #35): `-400`
+              measures 1.92:1 against this white background, under WCAG
+              1.4.11's 3:1 floor for a UI-component boundary; `-600` clears
+              it at 3.77:1 and matches the border color used elsewhere in
+              the app (e.g. PhotoUploadForm's file-picker button). */}
           <Link
             to={`/mapa?planting=${feature.id}`}
-            className="flex flex-col rounded-md border border-slate-200 p-3 text-slate-700 hover:border-emerald-400"
+            className="flex flex-col rounded-md border border-slate-200 p-3 text-slate-700 hover:border-emerald-600"
           >
             <span className="font-semibold">
               {feature.properties.nickname ?? feature.properties.species ?? 'Muda sem nome'}

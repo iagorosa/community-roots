@@ -24,9 +24,12 @@ function HomePage() {
           Code que fica no local para conhecer a história daquele canteiro.
         </p>
 
+        {/* `bg-emerald-700`, not `-600` (issue #35): white text on `-600`
+            measures 3.77:1, under WCAG AA's 4.5:1 floor — `-700` clears it
+            at 5.48:1. Hover darkens further to `-800` to stay distinct. */}
         <Link
           to="/mapa"
-          className="mt-8 inline-block rounded-lg bg-emerald-600 px-6 py-3 text-lg font-semibold text-white shadow-md transition-colors hover:bg-emerald-700"
+          className="mt-8 inline-block rounded-lg bg-emerald-700 px-6 py-3 text-lg font-semibold text-white shadow-md transition-colors hover:bg-emerald-800"
         >
           Ver o mapa dos canteiros
         </Link>

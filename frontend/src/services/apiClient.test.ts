@@ -23,7 +23,7 @@ describe('apiFetch', () => {
     })
   })
 
-  it('falls back to the generic message when the error body is not valid JSON, without throwing a different error', async () => {
+  it('falls back to a generic message that still says what to do next when the error body is not valid JSON', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({
@@ -34,25 +34,25 @@ describe('apiFetch', () => {
     )
 
     await expect(apiFetch('/api/regions/x/photos')).rejects.toMatchObject({
-      message: 'O servidor respondeu com erro (500).',
+      message: 'O servidor respondeu com erro (500). Tente novamente mais tarde.',
       status: 500,
     })
   })
 
-  it('falls back to the generic message when the error body is JSON but has no detail field', async () => {
+  it('falls back to a generic message that still says what to do next when the error body is JSON but has no detail field', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({ some: 'other shape' }, 400)))
 
     await expect(apiFetch('/api/regions/x/photos')).rejects.toMatchObject({
-      message: 'O servidor respondeu com erro (400).',
+      message: 'O servidor respondeu com erro (400). Tente novamente mais tarde.',
       status: 400,
     })
   })
 
-  it('still reports a network failure as "Não foi possível conectar ao servidor."', async () => {
+  it('reports a network failure with a message that says what to do next', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')))
 
     await expect(apiFetch('/api/regions/x/photos')).rejects.toMatchObject({
-      message: 'Não foi possível conectar ao servidor.',
+      message: 'Não foi possível conectar ao servidor. Verifique sua conexão e tente novamente.',
     })
   })
 

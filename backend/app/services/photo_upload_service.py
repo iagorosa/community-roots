@@ -23,6 +23,7 @@ from geoalchemy2.elements import WKTElement
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.errors import AppError
 from app.models.photo import Photo
 from app.schemas.photo import PhotoOut
 from app.services import planting_service
@@ -30,6 +31,27 @@ from app.services.exif_processing import process_photo_metadata
 from app.services.image_processing import validate_upload
 from app.storage.base import StorageBackend
 from app.storage.keys import generate_storage_key
+
+
+class PhotoStorageUnavailable(AppError):
+    """Raised when `storage.save` fails for a filesystem reason (permission
+    denied, disk full, `storage/` missing or wiped out from under the
+    process) — confirmed live (issue #36) as a gap: left uncaught, this
+    reached the client as a raw `PermissionError`/`OSError`, translated by
+    nothing into `app.core.errors`' structured shape, so it fell through to
+    the framework's own English, no-next-step default. `503` (not `500`):
+    this is specifically "the storage dependency is unavailable right now",
+    which is what actually happened and what makes "tente novamente" true —
+    a retry is expected to succeed once the disk/mount is healthy again,
+    unlike a generic server bug.
+    """
+
+    status_code = 503
+    code = "photo_storage_unavailable"
+
+    def __init__(self) -> None:
+        super().__init__("Não foi possível salvar a foto agora. Tente novamente em instantes.")
+
 
 # Maps the Pillow-decoded format (what `image_processing`/`exif_processing`
 # actually validated and re-encoded) to the extension used in `storage_key`.
@@ -80,7 +102,9 @@ def upload_photo(
     ImageTooLarge` and `image_processing.InvalidImage` unchanged — all
     `AppError` subclasses `app.core.errors.register_error_handlers` already
     translates into a structured `{"detail", "code"}` response, so none of
-    them are caught here.
+    them are caught here. `storage.save` failing with an `OSError` is the
+    one exception this function does translate itself, into
+    `PhotoStorageUnavailable` — see that class's docstring.
     """
     planting_service.get_planting(db, planting_id)  # raises PlantingNotFound if missing
 
@@ -89,7 +113,10 @@ def upload_photo(
 
     extension = _extension_for_content_type(metadata.content_type)
     storage_key = generate_storage_key(planting_id, extension=extension)
-    storage.save(storage_key, io.BytesIO(metadata.image_bytes), metadata.content_type)
+    try:
+        storage.save(storage_key, io.BytesIO(metadata.image_bytes), metadata.content_type)
+    except OSError as exc:
+        raise PhotoStorageUnavailable() from exc
 
     location = None
     if metadata.latitude is not None and metadata.longitude is not None:

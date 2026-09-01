@@ -368,6 +368,14 @@ levantadas pelos services e traduzidas em respostas HTTP por handlers em
 O `detail` é texto em português voltado ao usuário, seguro para exibir direto. O
 `code` é um identificador estável, em inglês, para o frontend decidir o que fazer.
 
+Qualquer exceção que não seja uma `AppError` — conexão com o banco perdida, escrita
+em `storage/` falhando por permissão, ou qualquer bug não previsto — também é
+capturada, por um handler para `Exception` registrado em `app/core/errors.py`
+(issue #36). O cliente recebe o mesmo formato acima, sempre com `code:
+"internal_error"` e um `detail` genérico que ainda diz o que fazer ("tente
+novamente em instantes"); a exceção real, com traceback, só é registrada no log do
+servidor — nunca chega à resposta HTTP.
+
 ---
 
 ## 6. Armazenamento de fotos

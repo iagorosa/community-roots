@@ -34,7 +34,10 @@ function renderForm(queryClient = new QueryClient({ defaultOptions: { queries: {
   function Wrapper({ children }: { children: ReactNode }) {
     return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   }
-  return { queryClient, ...render(<PhotoUploadForm slug="canteiro-do-ipe" />, { wrapper: Wrapper }) }
+  return {
+    queryClient,
+    ...render(<PhotoUploadForm plantingId="1a2b3c4d-5e6f-7890-abcd-ef1234567890" />, { wrapper: Wrapper }),
+  }
 }
 
 describe('PhotoUploadForm', () => {
@@ -78,7 +81,7 @@ describe('PhotoUploadForm', () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
     const [path, init] = fetchMock.mock.calls[0] as [string, RequestInit]
-    expect(path).toBe('/api/plantings/canteiro-do-ipe/photos')
+    expect(path).toBe('/api/plantings/1a2b3c4d-5e6f-7890-abcd-ef1234567890/photos')
     expect(init.method).toBe('POST')
     expect(init.body).toBeInstanceOf(FormData)
   })
@@ -122,7 +125,9 @@ describe('PhotoUploadForm', () => {
     // makes the timeline refetch and show the new photo on its own, with
     // no manual refresh or navigation (issue #29's scope).
     await waitFor(() =>
-      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['photos', 'canteiro-do-ipe'] }),
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: ['photos', '1a2b3c4d-5e6f-7890-abcd-ef1234567890'],
+      }),
     )
     expect(screen.queryByAltText(/pré-visualização/i)).not.toBeInTheDocument()
   })

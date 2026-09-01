@@ -64,6 +64,37 @@ def test_photo_is_created_with_location_null(db_session: Session) -> None:
     assert stored.status == "published"  # server_default, not passed explicitly
 
 
+def test_photo_defaults_to_no_identifiable_person_consent(db_session: Session) -> None:
+    """Issue #38: the common case (a photo of a plant, no person in it) must
+    keep working exactly as before, with nothing extra to fill in — the
+    server default covers every existing insert path that doesn't know
+    about this column yet.
+    """
+    region = _add_region(db_session)
+    planting = _add_planting(db_session, region.id)
+
+    photo = _make_photo(planting.id)
+    db_session.add(photo)
+    db_session.commit()
+
+    stored = db_session.execute(select(Photo).where(Photo.id == photo.id)).scalar_one()
+    assert stored.includes_identifiable_person_with_consent is False
+
+
+def test_photo_can_be_recorded_as_including_an_identifiable_person_with_consent(
+    db_session: Session,
+) -> None:
+    region = _add_region(db_session)
+    planting = _add_planting(db_session, region.id)
+
+    photo = _make_photo(planting.id, includes_identifiable_person_with_consent=True)
+    db_session.add(photo)
+    db_session.commit()
+
+    stored = db_session.execute(select(Photo).where(Photo.id == photo.id)).scalar_one()
+    assert stored.includes_identifiable_person_with_consent is True
+
+
 def test_photo_accepts_a_valid_point_location(db_session: Session) -> None:
     region = _add_region(db_session)
     planting = _add_planting(db_session, region.id)

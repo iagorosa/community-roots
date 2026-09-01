@@ -62,6 +62,12 @@ def upload_photo(
     # "desmarcado por padrão" (architecture.md §6.2): sharing GPS location is
     # opt-in, never assumed just because the client omitted the field.
     share_location: bool = Form(default=False),
+    # Issue #38 (LGPD, architecture.md §9): both default to `False`, mirroring
+    # `PhotoUploadForm`'s two unchecked-by-default checkboxes. Validated
+    # together in `photo_upload_service.upload_photo`, not here — the route
+    # layer only carries them through.
+    includes_identifiable_person: bool = Form(default=False),
+    identifiable_person_consent_confirmed: bool = Form(default=False),
     db: Session = Depends(get_db),  # noqa: B008
     storage: StorageBackend = Depends(get_storage_backend),  # noqa: B008
 ) -> PhotoOut:
@@ -77,6 +83,8 @@ def upload_photo(
         description=description,
         contributor_name=contributor_name,
         share_location=share_location,
+        includes_identifiable_person=includes_identifiable_person,
+        identifiable_person_consent_confirmed=identifiable_person_consent_confirmed,
     )
 
 

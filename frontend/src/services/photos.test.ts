@@ -122,4 +122,37 @@ describe('uploadPhoto', () => {
     expect(body.get('contributor_name')).toBeNull()
     expect(body.get('share_location')).toBe('false')
   })
+
+  // Issue #38 (LGPD): mirrors `share_location`'s own opt-in-by-default test
+  // above — both consent fields must default to `false` explicitly, not be
+  // omitted, since the backend form fields they map to also default to
+  // `False` only when present-but-false, never when the key is missing from
+  // a manually-built request.
+  it('sends both identifiable-person consent fields as false when not given', async () => {
+    const fetchMock = stubFetchResolving(SAMPLE_PHOTO, 201)
+    const file = new File(['fake-image-bytes'], 'canteiro.jpg', { type: 'image/jpeg' })
+
+    await uploadPhoto('canteiro-do-ipe', { file })
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    const body = init.body as FormData
+    expect(body.get('includes_identifiable_person')).toBe('false')
+    expect(body.get('identifiable_person_consent_confirmed')).toBe('false')
+  })
+
+  it('sends both identifiable-person consent fields as true when both are given', async () => {
+    const fetchMock = stubFetchResolving(SAMPLE_PHOTO, 201)
+    const file = new File(['fake-image-bytes'], 'canteiro.jpg', { type: 'image/jpeg' })
+
+    await uploadPhoto('canteiro-do-ipe', {
+      file,
+      includesIdentifiablePerson: true,
+      identifiablePersonConsentConfirmed: true,
+    })
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    const body = init.body as FormData
+    expect(body.get('includes_identifiable_person')).toBe('true')
+    expect(body.get('identifiable_person_consent_confirmed')).toBe('true')
+  })
 })

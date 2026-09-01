@@ -19,7 +19,11 @@ from app.models.planting import Planting
 from app.models.qr_code import QrCode
 from app.models.region import Region
 from app.services import photo_upload_service
-from app.services.photo_upload_service import PhotoStorageUnavailable, _extension_for_content_type
+from app.services.photo_upload_service import (
+    IdentifiablePersonConsentRequired,
+    PhotoStorageUnavailable,
+    _extension_for_content_type,
+)
 
 _POINT_WKT = "POINT(-43.3127 -21.8843)"
 
@@ -128,3 +132,33 @@ def test_upload_photo_translates_a_storage_write_failure_into_an_app_error(
     assert isinstance(error, AppError)
     assert error.status_code == 503
     assert error.detail == "Não foi possível salvar a foto agora. Tente novamente em instantes."
+
+
+def test_upload_photo_rejects_an_identifiable_person_without_confirmed_consent(
+    db_session: Session,
+) -> None:
+    """Issue #38 (LGPD): the service must enforce this rule itself, not rely
+    only on `PhotoUploadForm`'s client-side checkbox pairing — a request
+    that skips the frontend entirely must still be rejected.
+    """
+    region = _add_region(db_session)
+    planting = _add_planting(db_session, region.id)
+    db_session.commit()
+
+    with pytest.raises(IdentifiablePersonConsentRequired) as excinfo:
+        photo_upload_service.upload_photo(
+            db_session,
+            _StorageThatCannotWrite(),  # never reached: rejected before storage is touched
+            planting.id,
+            file=_jpeg_upload_file(),
+            description=None,
+            contributor_name=None,
+            share_location=False,
+            includes_identifiable_person=True,
+            identifiable_person_consent_confirmed=False,
+        )
+
+    error = excinfo.value
+    assert isinstance(error, AppError)
+    assert error.status_code == 422
+    assert error.code == "identifiable_person_consent_required"

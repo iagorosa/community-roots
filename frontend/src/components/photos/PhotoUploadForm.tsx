@@ -22,6 +22,12 @@ function PhotoUploadForm({ plantingId }: PhotoUploadFormProps) {
   const [contributorName, setContributorName] = useState('')
   const [description, setDescription] = useState('')
   const [shareLocation, setShareLocation] = useState(false)
+  // Issue #38 (LGPD, docs/architecture.md §9): checkbox A, always visible,
+  // unchecked by default. Checkbox B only renders once A is checked (see
+  // JSX below) and is required to submit while A stays checked — the
+  // `consentValidationMessage` computed further down enforces that.
+  const [includesIdentifiablePerson, setIncludesIdentifiablePerson] = useState(false)
+  const [identifiablePersonConsentConfirmed, setIdentifiablePersonConsentConfirmed] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // One `useId()` call, suffixed per field, instead of five separate
@@ -32,6 +38,8 @@ function PhotoUploadForm({ plantingId }: PhotoUploadFormProps) {
   const descriptionFieldId = `${formId}-description`
   const shareLocationFieldId = `${formId}-share-location`
   const shareLocationHintId = `${formId}-share-location-hint`
+  const identifiablePersonFieldId = `${formId}-identifiable-person`
+  const identifiablePersonConsentFieldId = `${formId}-identifiable-person-consent`
 
   const { mutate, isPending, isError, error, reset } = useUploadPhoto(plantingId)
 
@@ -66,6 +74,8 @@ function PhotoUploadForm({ plantingId }: PhotoUploadFormProps) {
     setContributorName('')
     setDescription('')
     setShareLocation(false)
+    setIncludesIdentifiablePerson(false)
+    setIdentifiablePersonConsentConfirmed(false)
     // Uncontrolled by design (`<input type="file">` can't take a `value`),
     // so clearing the visible filename after a successful submit needs a
     // direct reset alongside the `file` state above.
@@ -74,9 +84,30 @@ function PhotoUploadForm({ plantingId }: PhotoUploadFormProps) {
     }
   }
 
+  function handleIncludesIdentifiablePersonChange(event: ChangeEvent<HTMLInputElement>) {
+    const checked = event.target.checked
+    setIncludesIdentifiablePerson(checked)
+    // Unchecking A hides checkbox B (JSX below) — also reset its value, so
+    // re-checking A later never silently carries over a stale confirmation
+    // the person never actually gave for *this* photo.
+    if (!checked) {
+      setIdentifiablePersonConsentConfirmed(false)
+    }
+  }
+
+  // Issue #38: checkbox A checked without checkbox B blocks submission,
+  // with a message following this form's own error pattern (the
+  // `role="alert"` paragraph also used for the backend error below) — there
+  // was no other client-side validation message pattern already in this
+  // form to match instead.
+  const consentValidationMessage =
+    includesIdentifiablePerson && !identifiablePersonConsentConfirmed
+      ? 'Marque a confirmação de autorização do responsável para enviar esta foto, ou desmarque a opção acima.'
+      : null
+
   function handleSubmit(event: FormEvent) {
     event.preventDefault()
-    if (!file) {
+    if (!file || consentValidationMessage) {
       return
     }
 
@@ -86,6 +117,8 @@ function PhotoUploadForm({ plantingId }: PhotoUploadFormProps) {
         contributorName: contributorName.trim() || undefined,
         description: description.trim() || undefined,
         shareLocation,
+        includesIdentifiablePerson,
+        identifiablePersonConsentConfirmed,
       },
       { onSuccess: clearForm },
     )
@@ -187,13 +220,57 @@ function PhotoUploadForm({ plantingId }: PhotoUploadFormProps) {
         </div>
       </label>
 
+      {/* Issue #38 (LGPD, docs/architecture.md §9): checkbox A, always
+          visible, unchecked by default — self-declared, like
+          `contributor_name` is: nothing here verifies the claim, only
+          records that the uploader made it. */}
+      <label htmlFor={identifiablePersonFieldId} className="flex min-h-11 items-start gap-2 py-1">
+        <input
+          id={identifiablePersonFieldId}
+          type="checkbox"
+          checked={includesIdentifiablePerson}
+          onChange={handleIncludesIdentifiablePersonChange}
+          className="mt-1"
+        />
+        <span className="text-sm font-semibold text-slate-700">
+          Esta foto inclui uma ou mais pessoas identificáveis (ex.: rosto de alguém aparece na foto)
+        </span>
+      </label>
+
+      {/* Checkbox B: only rendered once A is checked, and required to
+          submit while A stays checked (`consentValidationMessage` below). */}
+      {includesIdentifiablePerson && (
+        <label
+          htmlFor={identifiablePersonConsentFieldId}
+          className="flex min-h-11 items-start gap-2 py-1 pl-6"
+        >
+          <input
+            id={identifiablePersonConsentFieldId}
+            type="checkbox"
+            checked={identifiablePersonConsentConfirmed}
+            onChange={(event) => setIdentifiablePersonConsentConfirmed(event.target.checked)}
+            className="mt-1"
+          />
+          <span className="text-sm font-semibold text-slate-700">
+            Confirmo que tenho autorização do responsável para publicar esta foto com pessoa(s)
+            identificável(is).
+          </span>
+        </label>
+      )}
+
+      {consentValidationMessage && (
+        <p role="alert" className="text-sm text-red-600">
+          {consentValidationMessage}
+        </p>
+      )}
+
       {/* `bg-emerald-700`, not `-600` (issue #35): white text on `-600`
           measures 3.77:1, under WCAG AA's 4.5:1 floor for this
           normal-weight text — `-700` clears it at 5.48:1. Disabled state is
           exempt (an inoperable control isn't a contrast requirement). */}
       <button
         type="submit"
-        disabled={!file || isPending}
+        disabled={!file || isPending || Boolean(consentValidationMessage)}
         className="rounded-lg bg-emerald-700 px-6 py-3 font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500"
       >
         {isPending ? 'Enviando...' : 'Enviar foto'}

@@ -33,6 +33,30 @@ from app.storage.base import StorageBackend
 from app.storage.keys import generate_storage_key
 
 
+class IdentifiablePersonConsentRequired(AppError):
+    """Raised when the upload declares an identifiable person
+    (`includes_identifiable_person=True`) without also confirming the
+    guardian's authorization (`identifiable_person_consent_confirmed`).
+
+    Issue #38 (LGPD): the project's decision is that photos of identifiable
+    people are allowed, but only with self-declared consent — the two
+    `PhotoUploadForm` checkboxes this mirrors. Enforced here too, not just
+    in the frontend, since a request can always skip the browser
+    altogether. `422` (not `400`): matches `image_too_large`/`invalid_image`
+    below, which use the same status for "the request is well-formed but
+    its content violates a rule".
+    """
+
+    status_code = 422
+    code = "identifiable_person_consent_required"
+
+    def __init__(self) -> None:
+        super().__init__(
+            "Para enviar fotos com pessoas identificáveis, é preciso confirmar "
+            "que você tem autorização do responsável."
+        )
+
+
 class PhotoStorageUnavailable(AppError):
     """Raised when `storage.save` fails for a filesystem reason (permission
     denied, disk full, `storage/` missing or wiped out from under the
@@ -95,6 +119,8 @@ def upload_photo(
     description: str | None,
     contributor_name: str | None,
     share_location: bool,
+    includes_identifiable_person: bool = False,
+    identifiable_person_consent_confirmed: bool = False,
 ) -> PhotoOut:
     """Validate, store and record a new photo for `planting_id`.
 
@@ -105,7 +131,17 @@ def upload_photo(
     them are caught here. `storage.save` failing with an `OSError` is the
     one exception this function does translate itself, into
     `PhotoStorageUnavailable` — see that class's docstring.
+
+    `includes_identifiable_person`/`identifiable_person_consent_confirmed`
+    default to `False` so every existing caller (and the common case, a
+    photo with no person in it) keeps working unchanged — issue #38 is
+    purely additive. Checked before anything else in this function — no
+    image bytes are read, no planting lookup happens — because it's the
+    cheapest possible rejection and doesn't depend on either.
     """
+    if includes_identifiable_person and not identifiable_person_consent_confirmed:
+        raise IdentifiablePersonConsentRequired()
+
     planting_service.get_planting(db, planting_id)  # raises PlantingNotFound if missing
 
     image = validate_upload(file.file, max_bytes=settings.max_upload_bytes)
@@ -135,6 +171,14 @@ def upload_photo(
         captured_at=metadata.captured_at,
         location=location,
         location_source=metadata.location_source,
+        # Reached only when the two are consistent (the guard above already
+        # rejected `True`/`False`), but spelled out as `and` rather than
+        # just `includes_identifiable_person` so the column's own invariant
+        # ("only true when both checkboxes were checked") is visible here
+        # too, not just enforced upstream.
+        includes_identifiable_person_with_consent=(
+            includes_identifiable_person and identifiable_person_consent_confirmed
+        ),
     )
     db.add(photo)
     db.commit()

@@ -18,23 +18,27 @@ Placa no canteiro  ->  QR Code  ->  canteiro digital  ->  linha do tempo de foto
 
 ## Situação do projeto
 
-O planejamento está concluído. A Fase 1 (fundação do projeto) também está.
+O MVP original (Fases 0–7) está concluído. Depois dele, o modelo de dados
+passou por um pivô: o antigo "canteiro" (um único `Planting` por área) virou
+dois conceitos — `Region` (a área/canteiro físico) e `Planting` (cada muda
+individual dentro dela). O pivô do frontend (Fase 9) também está concluído;
+restam 2 issues abertas de acabamento no backend (milestone "Fase 8").
 
 | Fase | Descrição | Situação |
 |---|---|---|
 | 0 | Planejamento e documentação | concluída |
 | 1 | Fundação do projeto | concluída |
-| 2 | Canteiros | não iniciada |
-| 3 | Mapa interativo | não iniciada |
-| 4 | Páginas de canteiro | não iniciada |
-| 5 | Envio de fotos | não iniciada |
-| 6 | QR Codes | não iniciada |
-| 7 | Polimento | não iniciada |
+| 2 | Canteiros | concluída |
+| 3 | Mapa interativo | concluída |
+| 4 | Páginas de canteiro | concluída |
+| 5 | Envio de fotos | concluída |
+| 6 | QR Codes | concluída |
+| 7 | Polimento | concluída |
+| 8 | Pivô Region/Planting — backend | em andamento (2 issues abertas) |
+| 9 | Pivô Region/Planting — frontend | concluída |
 
-As instruções de instalação abaixo já funcionam de ponta a ponta: banco de
-dados, backend até `/health` e frontend até a página inicial. A única exceção é
-o passo "Dados de desenvolvimento", que pertence à Fase 2 — veja a nota naquela
-seção.
+As instruções de instalação abaixo funcionam de ponta a ponta: banco de dados,
+backend, frontend e o passo opcional de dados de desenvolvimento (seed).
 
 O backlog fica nas [issues](https://github.com/iagorosa/community-roots/issues),
 organizadas por [milestone](https://github.com/iagorosa/community-roots/milestones)
@@ -135,10 +139,7 @@ redirecionados para o backend pelo proxy do Vite, então há uma origem só e
 nenhum CORS para configurar. A página inicial já mostra o status ao vivo de
 `/health`, confirmando que frontend, backend e banco estão conectados.
 
-### 4. Dados de desenvolvimento (Fase 2 em diante)
-
-> Este passo depende do model `Region`, que ainda não existe nesta fase. O
-> comando abaixo só funciona a partir da Fase 2 — pule-o por enquanto.
+### 4. Dados de desenvolvimento
 
 ```bash
 cd backend
@@ -185,16 +186,26 @@ docker compose down -v                   # para e apaga os dados
 **Fluxo A — explorar o mapa.** Abra `/`, siga a chamada para ação, toque num
 canteiro e confirme que a página dele abre com a linha do tempo.
 
-**Fluxo B — contribuir pelo QR Code.** Obtenha o QR Code de um canteiro em
-`/api/regions/{slug}/qr-code`, escaneie com a câmera do celular, confirme que abre
-o canteiro certo, envie uma foto e confirme que ela aparece na linha do tempo.
+**Fluxo B — contribuir pelo QR Code.** Obtenha o QR Code de uma muda ou de um
+canteiro (`/api/plantings/{id}/qr-code` ou `/api/regions/{slug}/qr-code`),
+escaneie com a câmera do celular, confirme que abre o destino certo, envie uma
+foto e confirme que ela aparece na linha do tempo.
 
-**Fluxo C — organizador.** Crie um canteiro pela API usando o header
-`X-Admin-Token`, obtenha o QR Code dele e confirme que a folha de impressão sai
-utilizável.
+**Fluxo C — organizador.** Crie um canteiro (e as mudas dentro dele) pela API
+usando o header `X-Admin-Token`, obtenha o QR Code e confirme que ele escaneia
+a partir do papel.
 
 Teste também numa viewport de 360 px de largura. O celular é a experiência
 principal para quem está de pé na área de plantio.
+
+O passo a passo detalhado de cada fluxo — o que clicar e o que conferir em
+cada etapa — está em [docs/manual-testing.md](docs/manual-testing.md). Para
+quem organiza a área de plantio no dia a dia (criar canteiro/muda, obter e
+imprimir o QR Code, esconder uma foto), o guia dedicado é
+[docs/organizer-guide.md](docs/organizer-guide.md) — não é preciso saber
+programar para segui-lo. As lacunas conhecidas de cobertura de teste, com os
+números reais da suíte, estão em
+[docs/test-coverage.md](docs/test-coverage.md).
 
 ---
 

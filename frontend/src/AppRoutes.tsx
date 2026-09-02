@@ -5,6 +5,7 @@ import MapPage from './pages/MapPage.tsx'
 import NotFoundPage from './pages/NotFoundPage.tsx'
 import QrRedirectPage from './pages/QrRedirectPage.tsx'
 import RegionPage from './pages/RegionPage.tsx'
+import RegionPrintPage from './pages/RegionPrintPage.tsx'
 
 // Split from `App` so tests can render it inside a `MemoryRouter` instead
 // of the real `BrowserRouter` — see docs/architecture.md §8 for the route
@@ -17,6 +18,7 @@ function AppRoutes() {
         <Route path="mapa" element={<MapPage />} />
         {/* English on purpose: matches printed QR codes (architecture.md §8). */}
         <Route path="regions/:slug" element={<RegionPage />} />
+        <Route path="regions/:slug/print" element={<RegionPrintPage />} />
         <Route path="r/:qrToken" element={<QrRedirectPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>

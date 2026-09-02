@@ -459,8 +459,10 @@ chave internamente. O `/r/{qr_token}` resolve através de
 
 `GET /api/regions/{region}/qr-code` gera a imagem sob demanda (`?format=png|svg`,
 `?size=`). Nada é gravado em disco — regerar é barato e não existe problema de
-arquivo desatualizado. A folha de impressão, com o nome do canteiro embaixo de
-cada código, é trabalho da Fase 6, produzido a partir do mesmo endpoint.
+arquivo desatualizado. A folha de impressão (`/regions/:slug/print`, issue
+#135, §8) monta um card por `Planting` a partir do endpoint equivalente de
+mudas (`GET /api/plantings/{id}/qr-code`), mais um card opcional com o QR
+Code da própria região, gerado por este endpoint.
 
 ---
 
@@ -471,6 +473,7 @@ cada código, é trabalho da Fase 6, produzido a partir do mesmo endpoint.
 | `/` | `HomePage` | O que é o projeto, como participar, chamada para ação |
 | `/mapa` | `MapPage` | Mapa interativo de todos os canteiros, em altura cheia |
 | `/regions/:slug` | `RegionPage` | Detalhe do canteiro, linha do tempo, envio de foto |
+| `/regions/:slug/print` | `RegionPrintPage` | Folha imprimível A4: um card com QR Code por muda ativa, mais o QR Code da própria região (issue #135) |
 | `/r/:qrToken` | `QrRedirectPage` | Resolve um token escaneado e redireciona |
 | `*` | `NotFoundPage` | |
 

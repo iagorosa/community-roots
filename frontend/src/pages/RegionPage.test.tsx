@@ -153,6 +153,15 @@ describe('RegionPage', () => {
     expect(link).toHaveAttribute('href', '/api/regions/canteiro-do-ipe/qr-code')
   })
 
+  it('links to the printable QR sheet page (issue #135)', async () => {
+    stubFetch({ region: { body: SAMPLE_FEATURE } })
+
+    renderRegionPage()
+
+    const link = await screen.findByRole('link', { name: /folha.*imprimir|imprimir.*folha/i })
+    expect(link).toHaveAttribute('href', '/regions/canteiro-do-ipe/print')
+  })
+
   it('renders NotFoundPage, not a generic error, when the region does not exist', async () => {
     stubFetch({
       region: {

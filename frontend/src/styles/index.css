@@ -1,5 +1,14 @@
 @import "tailwindcss";
 
+/* Printable QR sheet (`RegionPrintPage`, issue #135): A4 with a modest
+   margin. Tailwind's `print:` variant covers everything else on that page
+   (hiding chrome, `break-inside-avoid` per card) but has no equivalent for
+   `@page` — this is the one rule that has to live in plain CSS. */
+@page {
+  size: A4;
+  margin: 12mm;
+}
+
 /* RegionLayer (components/map/RegionLayer.tsx): hover/focus style for
    canteiro shapes on the map. Plain CSS, not Tailwind utilities — these
    are SVG paths from Leaflet, styled through the `className` Leaflet

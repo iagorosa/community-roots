@@ -1,6 +1,5 @@
 // Mirrors backend/app/schemas/geojson.py and region.py. Kept in sync by
-// hand until the backend grows an OpenAPI-generated client (see
-// types/health.ts for the same note).
+// hand until the backend grows an OpenAPI-generated client.
 
 export interface Point {
   type: 'Point'

@@ -65,6 +65,32 @@ def test_list_plantings_filters_by_region_id_query_param(
     assert len(response.json()["features"]) == 1
 
 
+def test_list_plantings_excludes_active_planting_in_an_archived_region(
+    client: TestClient, db_session: Session
+) -> None:
+    region = _add_region(db_session, status="archived")
+    _add_planting(db_session, region.id)
+    db_session.commit()
+
+    response = client.get("/api/plantings")
+
+    assert response.status_code == 200
+    assert response.json()["features"] == []
+
+
+def test_get_planting_returns_404_for_an_active_planting_in_an_archived_region(
+    client: TestClient, db_session: Session
+) -> None:
+    region = _add_region(db_session, status="archived")
+    planting = _add_planting(db_session, region.id)
+    db_session.commit()
+
+    response = client.get(f"/api/plantings/{planting.id}")
+
+    assert response.status_code == 404
+    assert response.json()["code"] == "planting_not_found"
+
+
 def test_get_planting_returns_200(client: TestClient, db_session: Session) -> None:
     region = _add_region(db_session)
     planting = _add_planting(db_session, region.id, species="Ipê-amarelo")

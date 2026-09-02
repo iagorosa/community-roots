@@ -116,6 +116,51 @@ def test_get_planting_raises_not_found_for_an_archived_planting(db_session: Sess
         planting_service.get_planting(db_session, planting.id)
 
 
+def test_list_plantings_excludes_active_planting_in_an_archived_region(
+    db_session: Session,
+) -> None:
+    region = _add_region(db_session, status="archived")
+    _add_planting(db_session, region.id)
+    db_session.commit()
+
+    collection = planting_service.list_plantings(db_session)
+
+    assert len(collection.features) == 0
+
+
+def test_list_plantings_excludes_active_planting_in_a_draft_region(db_session: Session) -> None:
+    region = _add_region(db_session, status="draft")
+    _add_planting(db_session, region.id)
+    db_session.commit()
+
+    collection = planting_service.list_plantings(db_session)
+
+    assert len(collection.features) == 0
+
+
+def test_list_plantings_includes_active_planting_in_an_active_region(
+    db_session: Session,
+) -> None:
+    region = _add_region(db_session, status="active")
+    _add_planting(db_session, region.id)
+    db_session.commit()
+
+    collection = planting_service.list_plantings(db_session)
+
+    assert len(collection.features) == 1
+
+
+def test_get_planting_raises_not_found_for_an_active_planting_in_an_archived_region(
+    db_session: Session,
+) -> None:
+    region = _add_region(db_session, status="archived")
+    planting = _add_planting(db_session, region.id)
+    db_session.commit()
+
+    with pytest.raises(PlantingNotFound):
+        planting_service.get_planting(db_session, planting.id)
+
+
 def test_create_planting_persists_fields_and_creates_a_qr_code(db_session: Session) -> None:
     region = _add_region(db_session)
     db_session.commit()
@@ -138,6 +183,27 @@ def test_create_planting_persists_fields_and_creates_a_qr_code(db_session: Sessi
         select(func.count()).select_from(QrCode).where(QrCode.planting_id == uuid.UUID(feature.id))
     ).scalar_one()
     assert qr_code_count == 1
+
+
+def test_create_planting_in_an_archived_region_still_returns_the_feature(
+    db_session: Session,
+) -> None:
+    """Admin create/update goes through `_fetch_feature_by_id`, which must stay
+    independent of the parent Region's status — same rule
+    `region_service._fetch_feature_by_id` documents for `Region` itself.
+    """
+    region = _add_region(db_session, status="archived")
+    db_session.commit()
+
+    payload = PlantingCreate(
+        region_id=region.id,
+        geometry={"type": "Point", "coordinates": (-43.3130, -21.8845)},
+        species="Jacarandá",
+    )
+
+    feature = planting_service.create_planting(db_session, payload)
+
+    assert feature.properties.species == "Jacarandá"
 
 
 def test_update_planting_changes_only_given_fields(db_session: Session) -> None:

@@ -10,7 +10,7 @@ import json
 import uuid
 from typing import Any
 
-from sqlalchemy import ColumnElement, Row, func, select
+from sqlalchemy import ColumnElement, Row, and_, func, select
 from sqlalchemy.orm import Session
 
 from app.core.errors import NotFoundError, ValidationFailedError
@@ -36,7 +36,14 @@ class PlantingNotFound(NotFoundError):
         super().__init__(f'Nenhuma muda encontrada para "{identifier}".')
 
 
-_PUBLICLY_VISIBLE: ColumnElement[bool] = Planting.status == "active"
+# A Planting inherits visibility from its parent Region: an active planting
+# inside an archived/draft Region must not surface publicly, since the
+# Region's own page — the thing that would lead a visitor here — is already
+# hidden by `region_service._PUBLICLY_VISIBLE`. Requires the `Region` join
+# `_planting_query` adds below.
+_PUBLICLY_VISIBLE: ColumnElement[bool] = and_(
+    Planting.status == "active", Region.status == "active"
+)
 
 
 def _planting_feature_columns() -> tuple[ColumnElement[Any], ...]:
@@ -80,7 +87,16 @@ def _planting_feature_columns() -> tuple[ColumnElement[Any], ...]:
 
 
 def _planting_query() -> Any:
-    return select(*_planting_feature_columns()).join(QrCode, QrCode.planting_id == Planting.id)
+    """Joins `Region` (not just `QrCode`) so `_PUBLICLY_VISIBLE` can reference
+    `Region.status` below. Every `Planting.region_id` is a NOT NULL FK, so
+    this is an inner join with no risk of accidentally dropping rows the way
+    an outer join over an optional relationship would.
+    """
+    return (
+        select(*_planting_feature_columns())
+        .join(QrCode, QrCode.planting_id == Planting.id)
+        .join(Region, Region.id == Planting.region_id)
+    )
 
 
 def _row_to_feature(row: Row[Any]) -> PlantingFeature:

@@ -9,8 +9,10 @@ The Region is upserted by slug: re-running never duplicates it, and
 repositions it when the configured center changes. Plantings are seeded
 alongside it, one per missing ordinal position, so a rerun tops the Region
 back up to `SEED_PLANTING_COUNT` without duplicating existing Plantings.
-Every Region/Planting's QR code is only assigned on first creation and left
-untouched on later reruns.
+Every Region/Planting's QR code is assigned on first creation and left
+untouched on later reruns — except a pre-existing Region missing one (data
+seeded before issue #80 introduced `QrCode`), which a rerun backfills
+(issue #108).
 """
 
 import math
@@ -32,7 +34,11 @@ from app.core.config import settings
 from app.db.session import SessionLocal
 from app.models.planting import Planting
 from app.models.region import Region
-from app.services.qr_code_service import create_planting_qr_code, create_region_qr_code
+from app.services.qr_code_service import (
+    create_planting_qr_code,
+    create_region_qr_code,
+    ensure_region_qr_code,
+)
 from app.services.region_service import slugify
 
 _METERS_PER_DEGREE_LATITUDE = 111_320
@@ -170,6 +176,10 @@ def seed(
         region.name = _REGION_NAME
         region.description = _PLACEHOLDER_DESCRIPTION
         region.geom = geom
+        # A region seeded before issue #80 introduced `QrCode` never got one
+        # backfilled by a later rerun — this branch only ever touched
+        # name/description/geom. See issue #108.
+        ensure_region_qr_code(db, region.id)
 
     existing_planting_count = db.execute(
         select(func.count()).select_from(Planting).where(Planting.region_id == region.id)

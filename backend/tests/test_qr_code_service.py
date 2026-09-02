@@ -98,3 +98,59 @@ def test_resolve_qr_token_finds_a_planting(db_session: Session) -> None:
 def test_resolve_qr_token_raises_for_an_unknown_token(db_session: Session) -> None:
     with pytest.raises(QrTokenNotFound):
         qr_code_service.resolve_qr_token(db_session, "does-not-exist")
+
+
+def test_ensure_region_qr_code_creates_one_for_a_region_missing_it(db_session: Session) -> None:
+    region = _add_region(db_session)  # no QrCode — simulates data seeded before issue #80
+
+    token = qr_code_service.ensure_region_qr_code(db_session, region.id)
+    db_session.commit()
+
+    assert token is not None
+    stored = db_session.execute(select(QrCode).where(QrCode.region_id == region.id)).scalar_one()
+    assert stored.token == token
+
+
+def test_ensure_region_qr_code_leaves_an_existing_one_untouched(db_session: Session) -> None:
+    region = _add_region(db_session)
+    original_token = qr_code_service.create_region_qr_code(db_session, region.id)
+    db_session.commit()
+
+    result = qr_code_service.ensure_region_qr_code(db_session, region.id)
+    db_session.commit()
+
+    assert result is None
+    stored = db_session.execute(select(QrCode).where(QrCode.region_id == region.id)).scalar_one()
+    assert stored.token == original_token
+
+
+def test_backfill_missing_region_qr_codes_only_creates_missing_ones(db_session: Session) -> None:
+    region_without_qr_code = _add_region(db_session)
+    region_with_qr_code = _add_region(db_session, slug="regiao-com-qr")
+    original_token = qr_code_service.create_region_qr_code(db_session, region_with_qr_code.id)
+    db_session.commit()
+
+    created_count = qr_code_service.backfill_missing_region_qr_codes(db_session)
+    db_session.commit()
+
+    assert created_count == 1
+    backfilled_token = db_session.execute(
+        select(QrCode.token).where(QrCode.region_id == region_without_qr_code.id)
+    ).scalar_one()
+    assert backfilled_token is not None
+    untouched_token = db_session.execute(
+        select(QrCode.token).where(QrCode.region_id == region_with_qr_code.id)
+    ).scalar_one()
+    assert untouched_token == original_token
+
+
+def test_backfill_missing_region_qr_codes_is_a_no_op_when_every_region_has_one(
+    db_session: Session,
+) -> None:
+    region = _add_region(db_session)
+    qr_code_service.create_region_qr_code(db_session, region.id)
+    db_session.commit()
+
+    created_count = qr_code_service.backfill_missing_region_qr_codes(db_session)
+
+    assert created_count == 0

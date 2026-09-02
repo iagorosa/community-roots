@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from app.models.planting import Planting
 from app.models.qr_code import QrCode
 from app.models.region import Region
-from app.services import region_service
+from app.services import qr_code_service, region_service
 from app.services.region_service import RegionNotFound
 
 _POINT_A = "POINT(-43.3130 -21.8845)"
@@ -59,6 +59,40 @@ def test_list_regions_returns_a_valid_feature_collection(db_session: Session) ->
     assert collection.type == "FeatureCollection"
     names = [feature.properties.name for feature in collection.features]
     assert names == ["Canteiro A", "Canteiro B"]  # ordered by name
+
+
+def test_list_regions_omits_a_region_without_a_qr_code(db_session: Session) -> None:
+    """Documents the current, intentional behavior of the INNER JOIN in
+    `_region_query` (issue #108): a `Region` missing its `QrCode` — as
+    happened with regions seeded before issue #80 introduced the model —
+    silently disappears from public listings instead of erroring. The fix
+    for real data is `qr_code_service.backfill_missing_region_qr_codes`
+    (exercised below), not a LEFT JOIN here — see the issue for why.
+    """
+    region = Region(
+        slug="canteiro-legado", name="Canteiro legado", geom=WKTElement(_POINT_A, srid=4326)
+    )
+    db_session.add(region)
+    db_session.commit()
+
+    collection = region_service.list_regions(db_session)
+
+    assert collection.features == []
+
+
+def test_backfilling_missing_qr_codes_makes_a_legacy_region_reappear(db_session: Session) -> None:
+    region = Region(
+        slug="canteiro-legado", name="Canteiro legado", geom=WKTElement(_POINT_A, srid=4326)
+    )
+    db_session.add(region)
+    db_session.commit()
+    assert region_service.list_regions(db_session).features == []  # confirms the bug up front
+
+    qr_code_service.backfill_missing_region_qr_codes(db_session)
+    db_session.commit()
+
+    collection = region_service.list_regions(db_session)
+    assert [feature.properties.name for feature in collection.features] == ["Canteiro legado"]
 
 
 def test_list_regions_serializes_geometry_and_planting_count(db_session: Session) -> None:

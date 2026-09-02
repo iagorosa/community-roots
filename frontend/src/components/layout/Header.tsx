@@ -20,7 +20,10 @@ const navLinkClassName = ({ isActive }: { isActive: boolean }) =>
  */
 function Header() {
   return (
-    <header className="border-b border-slate-200 bg-white">
+    // `print:hidden` (issue #135): the printable QR sheet (`RegionPrintPage`)
+    // renders inside this same `Layout`, and navigation chrome has no place
+    // on a page meant to be cut apart and taped to trees.
+    <header className="border-b border-slate-200 bg-white print:hidden">
       <nav
         aria-label="Navegação principal"
         className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-1"

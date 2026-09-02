@@ -93,14 +93,25 @@ function RegionPage() {
 
       {/* `flex min-h-11 items-center` (issue #34): the bare underlined text
           measured ~20px tall, well under the 44px touch-target floor. */}
-      <a
-        href={`/api/regions/${slug}/qr-code`}
-        target="_blank"
-        rel="noreferrer"
-        className="flex min-h-11 items-center text-sm text-emerald-700 underline"
-      >
-        Baixar QR Code da região
-      </a>
+      <div className="flex flex-col">
+        <a
+          href={`/api/regions/${slug}/qr-code`}
+          target="_blank"
+          rel="noreferrer"
+          className="flex min-h-11 items-center text-sm text-emerald-700 underline"
+        >
+          Baixar QR Code da região
+        </a>
+        {/* Issue #135: folha imprimível com um QR Code por muda, em vez do
+            caminho manual (baixar cada QR individualmente e montar a folha
+            num editor de texto). */}
+        <Link
+          to={`/regions/${slug}/print`}
+          className="flex min-h-11 items-center text-sm text-emerald-700 underline"
+        >
+          Imprimir folha de QR Codes
+        </Link>
+      </div>
 
       <div className="mt-4 flex flex-col gap-3">
         <h2 className="text-xl font-bold text-emerald-700">Mudas</h2>

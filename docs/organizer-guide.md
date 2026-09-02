@@ -170,15 +170,27 @@ Detalhes úteis:
 
 ## 3. Imprimir a folha de QR Codes
 
-**Estado atual: não existe ainda uma tela pronta no app para gerar uma folha
-de impressão com vários QR Codes de uma vez** (um card por muda, formatado
-para papel A4). Essa funcionalidade foi planejada, mas a issue original (#32)
-foi fechada sem implementação quando o modelo de dados mudou de "canteiro
-único" para "canteiro + mudas individuais" (o pivô Region/Planting), e nunca
-foi refeita depois — acompanhe em
-[issue #135](https://github.com/iagorosa/community-roots/issues/135).
+**Caminho recomendado:** abra `/regions/{slug}/print` no app (ex.:
+`http://localhost:5173/regions/nome-do-canteiro/print`, ou o link "Imprimir
+folha de QR Codes" na própria página do canteiro). A tela monta uma folha A4
+com um card por muda ativa do canteiro (QR Code + apelido, com a espécie
+como alternativa quando não há apelido), mais um card no topo com o QR Code
+da própria região, rotulado como placa de entrada. O botão "Imprimir" abre o
+diálogo de impressão do navegador — "Salvar como PDF" produz o arquivo para
+levar à gráfica, ou imprima direto.
 
-Até essa tela existir, o caminho que funciona hoje:
+1. Abra `/regions/{slug}/print` para o canteiro desejado.
+2. Confira visualmente a folha na tela antes de imprimir.
+3. Clique em "Imprimir" (ou `Ctrl+P`/`Cmd+P`) e escolha "Salvar como PDF" ou
+   a impressora. Prefira papel resistente à umidade, se possível — os
+   códigos ficam expostos ao tempo na área de plantio.
+4. **Antes de instalar em campo, teste cada código impresso escaneando com a
+   câmera de um celular comum**, exatamente como alguém visitando a área
+   faria — confirme que abre a muda certa antes de fixá-lo no chão.
+
+**Caminho manual (alternativa/fallback)**, útil se precisar de mais controle
+sobre o layout do que a tela oferece, ou para imprimir um único QR Code
+avulso:
 
 1. Baixe a imagem do QR Code de cada muda (passo 2 acima, uma imagem por
    muda — prefira `?format=svg` para melhor qualidade de impressão).
@@ -269,6 +281,7 @@ linha da foto.
 | Criar muda dentro de um canteiro | `POST /api/plantings` com `X-Admin-Token` |
 | Baixar QR Code do canteiro | `GET /api/regions/{slug-ou-id}/qr-code` |
 | Baixar QR Code da muda | `GET /api/plantings/{id}/qr-code` |
+| Folha imprimível de QR Codes (um card por muda + placa de entrada) | `/regions/{slug}/print` no app |
 | Listar fotos de uma muda (achar o `id`) | `GET /api/plantings/{id}/photos` |
 | Esconder uma foto | `UPDATE photos SET status = 'hidden' WHERE id = '...'` no banco |
 

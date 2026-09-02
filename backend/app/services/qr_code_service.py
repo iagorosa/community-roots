@@ -54,6 +54,56 @@ def create_planting_qr_code(db: Session, planting_id: uuid.UUID) -> str:
     return token
 
 
+def ensure_region_qr_code(db: Session, region_id: uuid.UUID) -> str | None:
+    """Create a `QrCode` for `region_id` if it doesn't already have one.
+
+    Returns the newly created token, or `None` if `region_id` already had a
+    `QrCode` (nothing done). Used by `scripts/seed.py`'s "region already
+    exists" branch and by `backfill_missing_region_qr_codes` below — every
+    real region should get its `QrCode` at creation time
+    (`region_service.create_region`), but regions seeded before issue #80
+    introduced the model never did (issue #108).
+    """
+    already_has_one = db.execute(
+        select(QrCode.id).where(QrCode.region_id == region_id)
+    ).scalar_one_or_none()
+    if already_has_one is not None:
+        return None
+    return create_region_qr_code(db, region_id)
+
+
+def backfill_missing_region_qr_codes(db: Session) -> int:
+    """Create a `QrCode` for every `Region` that doesn't have one yet.
+
+    Data-only fix for issue #108: `region_service._region_query()` INNER
+    JOINs on `qr_codes` by design (see that function's docstring), so a
+    region missing its `QrCode` silently disappears from every public
+    listing instead of erroring. No application code in current use can
+    create such a region (`region_service.create_region` always creates
+    both in the same transaction) — this exists for regions seeded before
+    issue #80 introduced the `QrCode` model, and is reused by both the
+    `5c04f25680ac_backfill_missing_region_qr_codes` data migration and
+    `scripts/seed.py`.
+
+    Does not commit — same convention as `create_region_qr_code`. Returns
+    the number of `QrCode`s created.
+    """
+    region_ids_missing_qr_code = (
+        db.execute(
+            select(Region.id).where(
+                Region.id.not_in(select(QrCode.region_id).where(QrCode.region_id.is_not(None)))
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    for region_id in region_ids_missing_qr_code:
+        create_region_qr_code(db, region_id)
+
+    return len(region_ids_missing_qr_code)
+
+
 def resolve_qr_token(db: Session, token: str) -> QrCodeTarget:
     """Resolve a scanned `token` to the region or planting it points at.
 

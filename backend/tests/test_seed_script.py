@@ -6,16 +6,19 @@ which contradicted the domain model as soon as `Planting` existed)."""
 
 from collections import Counter
 
+from geoalchemy2.elements import WKTElement
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.planting import Planting
 from app.models.qr_code import QrCode
 from app.models.region import Region
+from app.services.region_service import slugify
 from scripts.seed import _PLANTING_NICKNAMES, _grid_positions, seed
 
 _CENTER_LAT = -21.883859
 _CENTER_LON = -43.312459
+_POINT_WKT = "POINT(-43.3130 -21.8845)"
 
 
 def _region_count(db: Session) -> int:
@@ -139,6 +142,28 @@ def test_seed_preserves_qr_token_across_reruns(db_session: Session) -> None:
     ).scalar_one()
 
     assert original_token == token_after_rerun
+
+
+def test_seed_creates_the_missing_qr_code_for_a_preexisting_region(db_session: Session) -> None:
+    """Regions seeded before issue #80 introduced `QrCode` never got one
+    backfilled by a later `seed()` rerun — the `else` branch (region already
+    exists) only updated `name`/`description`/`geom`, never checked for a
+    missing `QrCode`. See issue #108."""
+    slug = slugify("AAMA — Matias Barbosa")
+    region = Region(slug=slug, name="Nome antigo", geom=WKTElement(_POINT_WKT, srid=4326))
+    db_session.add(region)
+    db_session.commit()
+    assert (
+        db_session.execute(select(QrCode).where(QrCode.region_id == region.id)).scalar_one_or_none()
+        is None
+    )
+
+    seed(db_session, center_lat=_CENTER_LAT, center_lon=_CENTER_LON, planting_count=1)
+
+    region_qr_code = db_session.execute(
+        select(QrCode).where(QrCode.region_id == region.id)
+    ).scalar_one_or_none()
+    assert region_qr_code is not None
 
 
 def test_grid_positions_forms_a_5x2_grid_for_the_default_count() -> None:

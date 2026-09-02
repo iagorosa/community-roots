@@ -134,11 +134,29 @@ def test_image_exceeding_max_image_pixels_is_rejected(monkeypatch: pytest.Monkey
     # width*height check, so this test fails if that check is ever removed
     # — unlike a >2x overshoot, which Pillow's internal guard would catch
     # on its own and give a false sense that this module's check matters.
+    #
+    # `validate_upload` copies `image_processing.MAX_IMAGE_PIXELS` onto the
+    # real Pillow-global `Image.MAX_IMAGE_PIXELS` on every call (see the
+    # comment at that assignment). Patching only the module constant leaves
+    # `monkeypatch` unaware that `Image.MAX_IMAGE_PIXELS` ever changed — it
+    # restores an attribute to the value captured when `setattr` was called
+    # on it, not by diffing — so the lowered ceiling would leak into every
+    # test that decodes an image afterward, in the same pytest session
+    # (issue #104). The no-op `setattr` below registers that attribute with
+    # `monkeypatch` too, so its original value is restored regardless of
+    # `validate_upload` overwriting it again from the module constant.
+    monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", Image.MAX_IMAGE_PIXELS)
     monkeypatch.setattr(image_processing, "MAX_IMAGE_PIXELS", 100)
     stream = io.BytesIO(_encode(format="PNG", width=12, height=12))  # 144 pixels > 100, < 200
 
     with pytest.raises(InvalidImage):
         validate_upload(stream)
+
+    # `validate_upload` already ran and mutated `Image.MAX_IMAGE_PIXELS` to
+    # the lowered ceiling above — proving the module-level patch really did
+    # propagate into the real Pillow attribute, i.e. that this test still
+    # exercises the leak-prone code path.
+    assert Image.MAX_IMAGE_PIXELS == 100
 
 
 def test_file_above_the_byte_limit_is_rejected() -> None:
